@@ -1,0 +1,6 @@
+name: my-pulumi-project
+runtime:
+  name: nodejs
+  options:
+    typescript: false
+description: AWS infrastructure setup with VPC, subnets, and related networking resources.
