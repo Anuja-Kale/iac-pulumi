@@ -1,84 +1,136 @@
-// "use strict";
-// const pulumi = require("@pulumi/pulumi");
-// const aws = require("@pulumi/aws");
-// const awsx = require("@pulumi/awsx");
-
-// // Create an AWS resource (S3 Bucket)
-// const bucket = new aws.s3.Bucket("my-bucket");
-
-// // Export the name of the bucket
-// exports.bucketName = bucket.id;
-
-
-"use strict";
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
 
-// Create a VPC
-const vpc = new aws.ec2.Vpc("myVPC", {
-    cidrBlock: "10.0.0.0/16",
+// Create a pulumi.Config instance to access configuration settings
+const config = new pulumi.Config();
+
+// Use configuration settings or provide defaults
+const vpcCidr = config.require("vpcCidr");
+const cidr = config.require("cidr");
+const cidrEnd = config.require("cidrEnd");
+const vpcName = config.require("vpcName");
+const internetGatewayName = config.require("internetGatewayName");
+const publicRouteTableName = config.require("publicRouteTableName");
+const privateRouteTableName = config.require("privateRouteTableName");
+const publicRouteCidrBlock = config.require("publicRouteCidrBlock");
+const subnetIds = [];
+
+const vpc = new aws.ec2.Vpc(vpcName, {
+  cidrBlock: vpcCidr,
 });
 
-// Create an Internet Gateway
-const ig = new aws.ec2.InternetGateway("myIG", {
-    vpcId: vpc.id,
+const igw = new aws.ec2.InternetGateway(internetGatewayName, {
+  vpcId: vpc.id,
 });
 
-// Create 3 Public Subnets
-const publicSubnets = [];
-for (let i = 0; i < 3; i++) {
-    publicSubnets.push(new aws.ec2.Subnet(`publicSubnet-${i}`, {
-        cidrBlock: `10.0.${i}.0/24`,
+const publicRouteTable = new aws.ec2.RouteTable(publicRouteTableName, {
+  vpcId: vpc.id,
+});
+
+const publicRoute = new aws.ec2.Route("publicRoute", {   routeTableId: publicRouteTable.id,   destinationCidrBlock: publicRouteCidrBlock,   gatewayId: igw.id, });
+
+const privateRouteTable = new aws.ec2.RouteTable(privateRouteTableName, {
+  vpcId: vpc.id,
+});
+
+const azs = aws.getAvailabilityZones();
+
+const calculateCidrBlock = (index, subnetType) => {
+  const subnetNumber = subnetType === "public" ? index * 2 : index * 2 + 1;
+  return `10.0.${subnetNumber}.0/24`; // Change the VPC CIDR range accordingly
+};
+
+azs.then((az) => {
+  const maxSubnets = 6;
+  let subnetCount = 0;
+  az.names.forEach((zoneName, azIndex) => {
+    if (subnetCount >= maxSubnets) return;
+    let subnetsToCreate;
+    // Determine the number of subnets to create based on the AZ count and index
+    if (az.names.length <= 2) {
+      subnetsToCreate = azIndex === 0 ? 2 : 2;
+    } else {
+      subnetsToCreate = 2;
+    }
+    for (let i = 0; i < subnetsToCreate; i++) {
+      if (subnetCount >= maxSubnets) break;
+      const subnetType = i % 2 === 0 ? "public" : "private";
+      const routeTable =
+        subnetType === "public" ? publicRouteTable : privateRouteTable;
+      const subnetName = `${subnetType}-subnet-${subnetCount}`;
+      const subnet = new aws.ec2.Subnet(subnetName, {
         vpcId: vpc.id,
-        mapPublicIpOnLaunch: true,
-        availabilityZone: `us-east-1${String.fromCharCode(97 + i)}`, // us-east-1a, us-east-1b, us-east-1c
-    }));
-}
-
-// Create 3 Private Subnets
-const privateSubnets = [];
-for (let i = 3; i < 6; i++) {
-    privateSubnets.push(new aws.ec2.Subnet(`privateSubnet-${i-3}`, {
-        cidrBlock: `10.0.${i}.0/24`,
-        vpcId: vpc.id,
-        availabilityZone: `us-east-1${String.fromCharCode(94 + i)}`, // us-east-1a, us-east-1b, us-east-1c
-    }));
-}
-
-// Create Public Route Table
-const publicRouteTable = new aws.ec2.RouteTable("publicRouteTable", {
-    vpcId: vpc.id,
-});
-
-// Associate Public Subnets with Public Route Table
-publicSubnets.forEach((subnet, index) => {
-    new aws.ec2.RouteTableAssociation(`publicRTA-${index}`, {
+        availabilityZone: zoneName,
+        cidrBlock: calculateCidrBlock(subnetCount, subnetType),
+        mapPublicIpOnLaunch: subnetType === "public",
+      });
+      subnetIds.push(subnet.id);
+      new aws.ec2.RouteTableAssociation(`${subnetType}-rta-${subnetCount}`, {
         subnetId: subnet.id,
-        routeTableId: publicRouteTable.id,
-    });
-});
+        routeTableId: routeTable.id,
+      });
+      subnetCount++;
+    }
+  });
 
-// Create Private Route Table
-const privateRouteTable = new aws.ec2.RouteTable("privateRouteTable", {
+
+  const webAppSecurityGroup = new aws.ec2.SecurityGroup("webapp-sg", {
     vpcId: vpc.id,
-});
+    ingress: [
+      {
+        fromPort: 22,
+        toPort: 22,
+        protocol: "tcp",
+        cidrBlocks: ["0.0.0.0/0"], // Allow SSH from anywhere
+      },
+      {
+        fromPort: 80,
+        toPort: 80,
+        protocol: "tcp",
+        cidrBlocks: ["0.0.0.0/0"], // Allow HTTP from anywhere
+      },
+      {
+        fromPort: 443,
+        toPort: 443,
+        protocol: "tcp",
+        cidrBlocks: ["0.0.0.0/0"], // Allow HTTPS from anywhere
+      },
+      {
+        fromPort: 8080, // Change to your application's port
+        toPort: 8080, // Change to your application's port
+        protocol: "tcp",
+        cidrBlocks: ["0.0.0.0/0"], // Allow your application traffic from anywhere
+      },
+    ],
+  });
 
-// Associate Private Subnets with Private Route Table
-privateSubnets.forEach((subnet, index) => {
-    new aws.ec2.RouteTableAssociation(`privateRTA-${index}`, {
-        subnetId: subnet.id,
-        routeTableId: privateRouteTable.id,
-    });
-});
+  // Replace this with your custom AMI ID
+  const customAmiId = "ami-0566e01388bfcdce5"; // Replace with your custom AMI ID
 
-// Create a public route
-const publicRoute = new aws.ec2.Route("publicRoute", {
-    routeTableId: publicRouteTable.id,
-    destinationCidrBlock: "0.0.0.0/0",
-    gatewayId: ig.id,
-});
+  // Create an EC2 instance
+  const ec2Instance = new aws.ec2.Instance("webapp-instance", {
+    ami: customAmiId, // Use your custom AMI ID here
+    instanceType: "t2.micro", // Change to your desired instance type
+    subnetId: subnetIds[3], // Use the first captured subnet ID
+    vpcSecurityGroupIds: [webAppSecurityGroup.id],
+    rootBlockDevice: {
+      volumeSize: 25,
+      volumeType: "gp2",
+      deleteOnTermination: true,
+    },
+    ebsBlockDevices: [
+      {
+        deviceName: "/dev/xvdf",
+        volumeSize: 25,
+        volumeType: "gp2",
+        deleteOnTermination: true,
+      },
+    ],
+    keyName: "key-pair",
+    tags: {
+      Name: "WebAppInstance",
+    },
+  }
+ );
 
-// Export the VPC ID and the public and private subnet IDs
-exports.vpcId = vpc.id;
-exports.publicSubnetIds = publicSubnets.map(subnet => subnet.id);
-exports.privateSubnetIds = privateSubnets.map(subnet => subnet.id);
+});
