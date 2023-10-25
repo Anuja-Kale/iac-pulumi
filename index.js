@@ -121,7 +121,7 @@ aws.getAvailabilityZones().then(azs => {
     });
 
     const ec2Instance = new aws.ec2.Instance("csye6225-ec2", {
-        ami: "ami-0efd7dc6deb91ce68",
+        ami: "ami-03209ada7992f7522",
         instanceType: "t2.micro",
         keyName: "ec2-key",
         vpcSecurityGroupIds: [appSecurityGroup.id],
@@ -133,5 +133,3 @@ aws.getAvailabilityZones().then(azs => {
 }).catch(error => {
     console.error("Error fetching availability zones:", error);
 });
-
-
