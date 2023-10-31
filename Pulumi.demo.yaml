@@ -1,5 +1,5 @@
 config:
-  my-pulumi-proj:amiid: "ami-03209ada7992f7522"
+  my-pulumi-proj:amiid: "ami-0a0ca34e91ebf89a0"
   my-pulumi-proj:cidr: 192.168.0.0/24
   my-pulumi-proj:cidrEnd: 192.168.0.255
   my-pulumi-proj:dbPassword:
