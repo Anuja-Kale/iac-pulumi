@@ -3,7 +3,7 @@ const aws = require("@pulumi/aws");
 
 // Retrieve configuration and secrets.
 const config = new pulumi.Config();
-const dbPassword = config.requireSecret("dbPassword");
+//const dbPassword = config.requireSecret("dbPassword");
 
 function applyTags(additionalTags = {}) {
     let tags = { "Name": pulumi.getProject(), "Type": pulumi.getStack() };
@@ -112,7 +112,7 @@ aws.getAvailabilityZones().then(azs => {
         storageType: "gp2",
         name: "csye6225",
         username: "csye6225",
-        password: dbPassword,
+        password: "root1234",
         parameterGroupName: dbParameterGroup.name,
         skipFinalSnapshot: true,
         vpcSecurityGroupIds: [dbSecurityGroup.id],
@@ -121,13 +121,23 @@ aws.getAvailabilityZones().then(azs => {
     });
 
     const ec2Instance = new aws.ec2.Instance("csye6225-ec2", {
-        ami: "ami-03209ada7992f7522",
+        ami: "ami-0a0ca34e91ebf89a0",
         instanceType: "t2.micro",
         keyName: "ec2-key",
         vpcSecurityGroupIds: [appSecurityGroup.id],
         subnetId: publicSubnets[0].id,
         associatePublicIpAddress: true,
         tags: applyTags({ "Resource": "EC2Instance" }),
+        userData: pulumi.interpolate`
+        #!/bin/bash
+        echo "NODE_ENV=envProd" >> /etc/environment
+        endpoint="${dbInstance.endpoint}"
+        echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
+        echo DB_USERNAME=csye6225 >> /etc/environment
+        echo DB_PASSWORD=root1234 >> /etc/environment
+        echo DB_DATABASE=csye6225 >> /etc/environment
+        sudo systemctl start rds
+        `.apply(s => s.trim()),
     });
 
 }).catch(error => {
