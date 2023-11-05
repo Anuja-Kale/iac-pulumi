@@ -1,84 +1,97 @@
-// "use strict";
-// const pulumi = require("@pulumi/pulumi");
-// const aws = require("@pulumi/aws");
-// const awsx = require("@pulumi/awsx");
-
-// // Create an AWS resource (S3 Bucket)
-// const bucket = new aws.s3.Bucket("my-bucket");
-
-// // Export the name of the bucket
-// exports.bucketName = bucket.id;
-
-
-"use strict";
-const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
+const pulumi = require("@pulumi/pulumi");
 
-// Create a VPC
-const vpc = new aws.ec2.Vpc("myVPC", {
-    cidrBlock: "10.0.0.0/16",
+// Define the required IAM policy for CloudWatch in JSON format
+const cloudWatchPolicyJson = {
+  Version: "2012-10-17",
+  Statement: [
+    {
+      Effect: "Allow",
+      Action: [
+        "cloudwatch:PutMetricData",
+        "ec2:DescribeTags",
+        "logs:*",
+        "s3:GetBucketLocation",
+        "s3:ListAllMyBuckets"
+      ],
+      Resource: "*"
+    }
+  ]
+};
+
+// Create a new IAM role for the EC2 instance
+const role = new aws.iam.Role("my-instance-role", {
+  assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({
+    Service: "ec2.amazonaws.com",
+  }),
 });
 
-// Create an Internet Gateway
-const ig = new aws.ec2.InternetGateway("myIG", {
-    vpcId: vpc.id,
+// Attach the policy to the role
+const policy = new aws.iam.Policy("my-instance-policy", {
+  policy: JSON.stringify(cloudWatchPolicyJson),
 });
 
-// Create 3 Public Subnets
-const publicSubnets = [];
-for (let i = 0; i < 3; i++) {
-    publicSubnets.push(new aws.ec2.Subnet(`publicSubnet-${i}`, {
-        cidrBlock: `10.0.${i}.0/24`,
-        vpcId: vpc.id,
-        mapPublicIpOnLaunch: true,
-        availabilityZone: `us-east-1${String.fromCharCode(97 + i)}`, // us-east-1a, us-east-1b, us-east-1c
-    }));
-}
-
-// Create 3 Private Subnets
-const privateSubnets = [];
-for (let i = 3; i < 6; i++) {
-    privateSubnets.push(new aws.ec2.Subnet(`privateSubnet-${i-3}`, {
-        cidrBlock: `10.0.${i}.0/24`,
-        vpcId: vpc.id,
-        availabilityZone: `us-east-1${String.fromCharCode(94 + i)}`, // us-east-1a, us-east-1b, us-east-1c
-    }));
-}
-
-// Create Public Route Table
-const publicRouteTable = new aws.ec2.RouteTable("publicRouteTable", {
-    vpcId: vpc.id,
+// Attach the IAM policy to the role
+const rolePolicyAttachment = new aws.iam.RolePolicyAttachment("my-role-policy-attachment", {
+  role: role,
+  policyArn: policy.arn,
 });
 
-// Associate Public Subnets with Public Route Table
-publicSubnets.forEach((subnet, index) => {
-    new aws.ec2.RouteTableAssociation(`publicRTA-${index}`, {
-        subnetId: subnet.id,
-        routeTableId: publicRouteTable.id,
-    });
+// Create an IAM instance profile for the EC2 instance
+const instanceProfile = new aws.iam.InstanceProfile("my-instance-profile", {
+  role: role,
 });
 
-// Create Private Route Table
-const privateRouteTable = new aws.ec2.RouteTable("privateRouteTable", {
-    vpcId: vpc.id,
+// Security group to allow HTTP ingress
+const securityGroup = new aws.ec2.SecurityGroup("http-sg", {
+  ingress: [
+    {
+      protocol: "tcp",
+      fromPort: 8080,
+      toPort: 8080,
+      cidrBlocks: ["0.0.0.0/0"],
+    }
+  ],
+  egress: [
+    {
+      protocol: "-1",
+      fromPort: 0,
+      toPort: 0,
+      cidrBlocks: ["0.0.0.0/0"],
+    }
+  ]
 });
 
-// Associate Private Subnets with Private Route Table
-privateSubnets.forEach((subnet, index) => {
-    new aws.ec2.RouteTableAssociation(`privateRTA-${index}`, {
-        subnetId: subnet.id,
-        routeTableId: privateRouteTable.id,
-    });
+// Create an EC2 instance
+const instance = new aws.ec2.Instance("web-server-instance", {
+  ami: "ami-0c55b159cbfafe1f0", // Replace with your AMI ID
+  instanceType: "t2.micro",
+  securityGroups: [securityGroup.name],
+  iamInstanceProfile: instanceProfile.name,
+  userData: `#!/bin/bash
+echo "Installing CloudWatch Agent..."
+# Your commands to install CloudWatch Agent here
+# For example:
+# wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+# dpkg -i -E ./amazon-cloudwatch-agent.deb
+# Configure the CloudWatch Agent
+# (Add commands to configure the agent here)
+# Start the CloudWatch Agent
+# /opt/aws/amazon-cloudwatch-agent/bin/start-amazon-cloudwatch-agent
+`
 });
 
-// Create a public route
-const publicRoute = new aws.ec2.Route("publicRoute", {
-    routeTableId: publicRouteTable.id,
-    destinationCidrBlock: "0.0.0.0/0",
-    gatewayId: ig.id,
+// Get the hosted zone by the domain name
+const zone = aws.route53.getZone({ name: "your-domain-name.tld." });
+
+// Create a new A record to point to the EC2 instance
+const record = new aws.route53.Record("app-a-record", {
+  zoneId: zone.then(z => z.id),
+  name: "your-domain-name.tld",
+  type: "A",
+  ttl: 300,
+  records: [instance.publicIp],
 });
 
-// Export the VPC ID and the public and private subnet IDs
-exports.vpcId = vpc.id;
-exports.publicSubnetIds = publicSubnets.map(subnet => subnet.id);
-exports.privateSubnetIds = privateSubnets.map(subnet => subnet.id);
+// Export the DNS name of the EC2 instance
+exports.instanceDnsName = instance.publicDns;
