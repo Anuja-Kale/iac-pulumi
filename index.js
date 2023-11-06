@@ -1,24 +1,6 @@
 const aws = require("@pulumi/aws");
 const pulumi = require("@pulumi/pulumi");
 
-// Define the required IAM policy for CloudWatch in JSON format
-const cloudWatchPolicyJson = {
-  Version: "2012-10-17",
-  Statement: [
-    {
-      Effect: "Allow",
-      Action: [
-        "cloudwatch:PutMetricData",
-        "ec2:DescribeTags",
-        "logs:*",
-        "s3:GetBucketLocation",
-        "s3:ListAllMyBuckets"
-      ],
-      Resource: "*"
-    }
-  ]
-};
-
 // Create a new IAM role for the EC2 instance
 const role = new aws.iam.Role("my-instance-role", {
   assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({
@@ -26,15 +8,10 @@ const role = new aws.iam.Role("my-instance-role", {
   }),
 });
 
-// Attach the policy to the role
-const policy = new aws.iam.Policy("my-instance-policy", {
-  policy: JSON.stringify(cloudWatchPolicyJson),
-});
-
-// Attach the IAM policy to the role
-const rolePolicyAttachment = new aws.iam.RolePolicyAttachment("my-role-policy-attachment", {
+// Attach the AWS managed CloudWatchAgentServerPolicy to the role
+const policyAttachment = new aws.iam.RolePolicyAttachment("my-role-policy-attachment", {
   role: role,
-  policyArn: policy.arn,
+  policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy", // This is the ARN for the AWS managed policy
 });
 
 // Create an IAM instance profile for the EC2 instance
@@ -82,12 +59,12 @@ echo "Installing CloudWatch Agent..."
 });
 
 // Get the hosted zone by the domain name
-const zone = aws.route53.getZone({ name: "your-domain-name.tld." });
+const zone = aws.route53.getZone({ name: "awswebapp.tech" });
 
 // Create a new A record to point to the EC2 instance
 const record = new aws.route53.Record("app-a-record", {
   zoneId: zone.then(z => z.id),
-  name: "your-domain-name.tld",
+  name: "awswebapp.tech",
   type: "A",
   ttl: 300,
   records: [instance.publicIp],
