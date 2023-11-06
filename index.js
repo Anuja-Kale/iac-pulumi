@@ -3,8 +3,15 @@ const pulumi = require("@pulumi/pulumi");
 
 // Create a new IAM role for the EC2 instance
 const role = new aws.iam.Role("my-instance-role", {
-  assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({
-    Service: "ec2.amazonaws.com",
+  assumeRolePolicy: JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [{
+      Action: "sts:AssumeRole",
+      Effect: "Allow",
+      Principal: {
+        Service: "ec2.amazonaws.com"
+      }
+    }],
   }),
 });
 
@@ -19,7 +26,7 @@ const instanceProfile = new aws.iam.InstanceProfile("my-instance-profile", {
   role: role,
 });
 
-// Security group to allow HTTP ingress
+// Security group to allow HTTP ingress on port 8080
 const securityGroup = new aws.ec2.SecurityGroup("http-sg", {
   ingress: [
     {
@@ -27,7 +34,7 @@ const securityGroup = new aws.ec2.SecurityGroup("http-sg", {
       fromPort: 8080,
       toPort: 8080,
       cidrBlocks: ["0.0.0.0/0"],
-    }
+    },
   ],
   egress: [
     {
@@ -35,40 +42,44 @@ const securityGroup = new aws.ec2.SecurityGroup("http-sg", {
       fromPort: 0,
       toPort: 0,
       cidrBlocks: ["0.0.0.0/0"],
-    }
-  ]
+    },
+  ],
 });
 
 // Create an EC2 instance
 const instance = new aws.ec2.Instance("web-server-instance", {
-  ami: "ami-0c55b159cbfafe1f0", // Replace with your AMI ID
+  ami: "ami-09dfefe886908288e", // Replace with your AMI ID
   instanceType: "t2.micro",
   securityGroups: [securityGroup.name],
   iamInstanceProfile: instanceProfile.name,
   userData: `#!/bin/bash
-echo "Installing CloudWatch Agent..."
-# Your commands to install CloudWatch Agent here
-# For example:
-# wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
-# dpkg -i -E ./amazon-cloudwatch-agent.deb
-# Configure the CloudWatch Agent
-# (Add commands to configure the agent here)
+# Install and configure the CloudWatch Agent
+sudo yum install -y amazon-cloudwatch-agent
+# Assuming you have a configuration file on S3 or passed through the user data
+# aws s3 cp s3://mybucket/my-cloudwatch-agent-config.json /etc/cwagent-config.json
+# Apply the configuration
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/etc/cwagent-config.json -s
 # Start the CloudWatch Agent
-# /opt/aws/amazon-cloudwatch-agent/bin/start-amazon-cloudwatch-agent
-`
+sudo systemctl enable amazon-cloudwatch-agent
+sudo systemctl start amazon-cloudwatch-agent
+`,
+  tags: {
+    "Name": "web-server-instance"
+  },
 });
 
-// Get the hosted zone by the domain name
-const zone = aws.route53.getZone({ name: "awswebapp.tech" });
+// Get the hosted zone by the domain name, make sure to handle the promise correctly
+const zone = pulumi.output(aws.route53.getZone({ name: "demo.awswebapp.tech" }));
 
-// Create a new A record to point to the EC2 instance
+// Create or update a new A record to point to the EC2 instance
 const record = new aws.route53.Record("app-a-record", {
-  zoneId: zone.then(z => z.id),
-  name: "awswebapp.tech",
+  zoneId: zone.id,
+  name: "demo.awswebapp.tech",
   type: "A",
-  ttl: 300,
+  ttl: 60,
   records: [instance.publicIp],
 });
 
 // Export the DNS name of the EC2 instance
 exports.instanceDnsName = instance.publicDns;
+
