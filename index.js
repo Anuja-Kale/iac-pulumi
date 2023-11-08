@@ -149,7 +149,8 @@ const instanceProfile = new aws.iam.InstanceProfile("my-instance-profile", {
 
     const ec2Instance2 = new aws.ec2.Instance("app-instance", {
         instanceType: "t2.micro",
-        ami: "ami-0b389a45c8ba408eb", // Replace with your AMI ID
+        ami: "ami-0faa86e953f05ab79", // Replace with your AMI ID
+        keyName: "ec2-key",
         subnetId: publicSubnets[0].id,
         vpcSecurityGroupIds: [appSecurityGroup.id],
         associatePublicIpAddress: true,
