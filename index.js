@@ -121,18 +121,15 @@ aws.getAvailabilityZones().then(azs => {
     });
 
   // Attach the AWS managed CloudWatchAgentServerPolicy to the role
-const policyAttachment = new aws.iam.RolePolicyAttachment("my-role-policy-attachment", {
-  role: ec2Role, // Use ec2Role variable instead of undefined 'role'
-  policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+  const policyAttachment = new aws.iam.RolePolicyAttachment("my-role-policy-attachment", {
+    role: ec2Role.name,
+    policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
 });
-
 
 // Create an IAM instance profile for the EC2 instance
 const instanceProfile = new aws.iam.InstanceProfile("my-instance-profile", {
-  role: ec2Role, // Use ec2Role variable instead of undefined 'role'
-  });
-
-
+    role: ec2Role.name,
+});
 
 
     const dbInstance = new aws.rds.Instance("csye6225-db", {
@@ -151,55 +148,34 @@ const instanceProfile = new aws.iam.InstanceProfile("my-instance-profile", {
     });
 
     const ec2Instance2 = new aws.ec2.Instance("app-instance", {
-      instanceType: "t2.micro",
-      ami: "ami-0b389a45c8ba408eb", // Please replace with a valid AMI ID
-      subnetId: publicSubnets[0].id,
-      securityGroups: [appSecurityGroup.name],
-      associatePublicIpAddress: true,
-      iamInstanceProfile: instanceProfile.name, // Use instanceProfile variable
-      userData: `#!/bin/bash
-      echo "NODE_ENV=production" >> /etc/environment
-      endpoint="${dbInstance.endpoint}"
-      echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
-      echo DB_USERNAME=csye6225 >> /etc/environment
-      echo DB_PASSWORD=root1234 >> /etc/environment
-      echo DB_DATABASE=csye6225 >> /etc/environment
-      
-      # Install and configure the CloudWatch Agent
-      sudo yum install -y amazon-cloudwatch-agent
-      # Assuming you have a configuration file on S3 or passed through the user data
-      # aws s3 cp s3://mybucket/my-cloudwatch-agent-config.json /etc/cwagent-config.json
-      # Apply the configuration
-      sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/etc/cwagent-config.json -s
-      # Start the CloudWatch Agent
-      sudo systemctl enable amazon-cloudwatch-agent
-      sudo systemctl start amazon-cloudwatch-agent
-      `,
-      
-      tags: {
-          "Name": "web-server-instance"
-      },
-  });
-  
-
-
-// Get the hosted zone by the domain name, ensuring to handle the promise correctly
-const zone = pulumi.output(aws.route53.getZone({ name: "demo.awswebapp.tech" }));
-
-// Create or update a new A record to point to the EC2 instance
-const record = new aws.route53.Record("app-a-record", {
-  zoneId: zone.id,
-  name: "demo.awswebapp.tech",
-  type: "A",
-  ttl: 60,
-  records: [ec2Instance2.publicIp], // Use ec2Instance2 instead of instance
-});
-
-
-   // Outputs
-exports.publicIpAddress = ec2Instance2.publicIp;
-exports.dbAddress = dbInstance.address;
-exports.instanceDnsName = ec2Instance2.publicDns;
-
-
-});
+        instanceType: "t2.micro",
+        ami: "ami-0b389a45c8ba408eb", // Replace with your AMI ID
+        subnetId: publicSubnets[0].id,
+        vpcSecurityGroupIds: [appSecurityGroup.id],
+        associatePublicIpAddress: true,
+        iamInstanceProfile: instanceProfile.name,
+        userData: pulumi.interpolate`#!/bin/bash
+        echo "NODE_ENV=production" >> /etc/environment
+        endpoint=${dbInstance.endpoint}
+        echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
+        echo DB_USERNAME=csye6225 >> /etc/environment
+        echo DB_PASSWORD=root1234 >> /etc/environment
+        echo DB_DATABASE=csye6225 >> /etc/environment
+        # Commands for installing and starting CloudWatch Agent
+        `,
+        tags: {
+            "Name": "web-server-instance"
+        },
+    }, { dependsOn: [policyAttachment] }); // Ensure that the EC2 instance is created after the policy attachment
+    
+    const zone = pulumi.output(aws.route53.getZone({ name: "demo.awswebapp.tech" })); // Replace with your domain
+    
+    const record = new aws.route53.Record("app-a-record", {
+        zoneId: zone.id,
+        name: "demo.awswebapp.tech", // Replace with your subdomain
+        type: "A",
+        ttl: 60,
+        records: [ec2Instance2.publicIp],
+    }, { dependsOn: [ec2Instance2] }); // Ensure that the A record is created after the EC2 instance
+    
+    exports.instanceDnsName = ec2Instance2.publicDns;});
