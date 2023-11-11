@@ -52,7 +52,13 @@ aws.getAvailabilityZones().then(azs => {
             { protocol: "tcp", fromPort: 8080, toPort: 8080, cidrBlocks: ["0.0.0.0/0"] },
             { protocol: "tcp", fromPort: 22, toPort: 22, cidrBlocks: ["0.0.0.0/0"] }
         ],
-        egress: [{ protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] }],
+        egress: [{ fromPort: 3306, toPort: 3306, protocol: "tcp", cidrBlocks: ["0.0.0.0/0"] }, {
+            fromPort: 443,      // Allow outbound traffic on port 3306
+            toPort: 443,        // Allow outbound traffic on port 3306
+            protocol: "tcp",     // TCP protocol
+            cidrBlocks: ["0.0.0.0/0"],  // Allow all destinations
+          },],
+
         tags: applyTags({ "Name": "AppSecurityGroup" }),
     });
 
@@ -119,11 +125,33 @@ aws.getAvailabilityZones().then(azs => {
         }),
         tags: applyTags({ "Resource": "EC2Role" }),
     });
+    const policy = new aws.iam.Policy("examplePolicy", {
+        policy: JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+              {
+                Effect: "Allow",
+                Action: [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents",
+                    "logs:DescribeLogStreams",
+                    "cloudwatch:PutMetricData",
+                    "cloudwatch:GetMetricData",
+                    "cloudwatch:GetMetricStatistics",
+                    "cloudwatch:ListMetrics",
+                    "ec2:DescribeTags"
+                ],
+                Resource: "*"
+            }
+            ],
+        }),
+      });
 
   // Attach the AWS managed CloudWatchAgentServerPolicy to the role
   const policyAttachment = new aws.iam.RolePolicyAttachment("my-role-policy-attachment", {
     role: ec2Role.name,
-    policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+    policyArn: policy.arn,
 });
 
 // Create an IAM instance profile for the EC2 instance
@@ -148,8 +176,9 @@ const instanceProfile = new aws.iam.InstanceProfile("my-instance-profile", {
     });
 
     const ec2Instance2 = new aws.ec2.Instance("app-instance", {
+        
         instanceType: "t2.micro",
-        ami: "ami-0faa86e953f05ab79", // Replace with your AMI ID
+        ami: "ami-0f78f72baae06172d", // Replace with your AMI ID
         keyName: "ec2-key",
         subnetId: publicSubnets[0].id,
         vpcSecurityGroupIds: [appSecurityGroup.id],
@@ -170,10 +199,11 @@ const instanceProfile = new aws.iam.InstanceProfile("my-instance-profile", {
     }, { dependsOn: [policyAttachment] }); // Ensure that the EC2 instance is created after the policy attachment
     
     const zone = pulumi.output(aws.route53.getZone({ name: "demo.awswebapp.tech" })); // Replace with your domain
-    
+    const domainName = ""; // Replace with your actual domain name
+
     const record = new aws.route53.Record("app-a-record", {
         zoneId: zone.id,
-        name: "demo.awswebapp.tech", // Replace with your subdomain
+        name: domainName, 
         type: "A",
         ttl: 60,
         records: [ec2Instance2.publicIp],
