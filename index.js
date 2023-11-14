@@ -44,24 +44,56 @@ aws.getAvailabilityZones().then(azs => {
         }));
     }
 
-    const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
-        vpcId: vpc.id,
-        description: "Allow inbound HTTP, HTTPS, SSH, and custom traffic",
-        ingress: [
-            { protocol: "tcp", fromPort: 80, toPort: 80, cidrBlocks: ["0.0.0.0/0"] },
-            { protocol: "tcp", fromPort: 443, toPort: 443, cidrBlocks: ["0.0.0.0/0"] },
-            { protocol: "tcp", fromPort: 8080, toPort: 8080, cidrBlocks: ["0.0.0.0/0"] },
-            { protocol: "tcp", fromPort: 22, toPort: 22, cidrBlocks: ["0.0.0.0/0"] }
-        ],
-        egress: [{ fromPort: 3306, toPort: 3306, protocol: "tcp", cidrBlocks: ["0.0.0.0/0"] }, {
-            fromPort: 443,      // Allow outbound traffic on port 3306
-            toPort: 443,        // Allow outbound traffic on port 3306
-            protocol: "tcp",     // TCP protocol
-            cidrBlocks: ["0.0.0.0/0"],  // Allow all destinations
-          },],
+   // Load Balancer Security Group
+   const loadBalancerSg = new aws.ec2.SecurityGroup("lb-sg", {
+    vpcId: vpc.id,
+    description: "Load balancer security group",
+    ingress: [
+        { protocol: "tcp", fromPort: 80, toPort: 80, cidrBlocks: ["0.0.0.0/0"] },
+        { protocol: "tcp", fromPort: 443, toPort: 443, cidrBlocks: ["0.0.0.0/0"] }
+    ],
+    egress: [
+        { protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] }
+    ],
+    tags: applyTags({ "Name": "LoadBalancerSG" }),
+});
 
-        tags: applyTags({ "Name": "AppSecurityGroup" }),
-    });
+// Define Load Balancer
+const elb = new aws.elb.LoadBalancer("my-load-balancer", {
+    availabilityZones: ["us-east-1a", "us-east-1b", "us-east-1c"], // Adjusted to us-east (Virginia)
+    listeners: [{
+        instancePort: 80,
+        instanceProtocol: "http",
+        lbPort: 80,
+        lbProtocol: "http",
+    }],
+    securityGroups: [loadBalancerSg.id], // Attach the load balancer security group
+    subnets: publicSubnets.map(subnet => subnet.id), // Attach to the public subnets
+    tags: applyTags({ "Name": "my-load-balancer" }),
+});
+
+// App Security Group
+const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
+    vpcId: vpc.id,
+    description: "Allow inbound HTTP, HTTPS, SSH, and custom traffic",
+    ingress: [
+        { protocol: "tcp", fromPort: 80, toPort: 80, cidrBlocks: ["0.0.0.0/0"] },
+        { protocol: "tcp", fromPort: 443, toPort: 443, cidrBlocks: ["0.0.0.0/0"] },
+        { protocol: "tcp", fromPort: 8080, toPort: 8080, cidrBlocks: ["0.0.0.0/0"] },
+        { protocol: "tcp", fromPort: 22, toPort: 22, cidrBlocks: ["0.0.0.0/0"] },
+        { protocol: "tcp", fromPort: 80, toPort: 80, securityGroups: [loadBalancerSg.id] }
+    ],
+    egress: [
+        { fromPort: 3306, toPort: 3306, protocol: "tcp", cidrBlocks: ["0.0.0.0/0"] },
+        {
+            fromPort: 443,
+            toPort: 443,
+            protocol: "tcp",
+            cidrBlocks: ["0.0.0.0/0"],
+        },
+    ],
+    tags: applyTags({ "Name": "AppSecurityGroup" }),
+});
 
     const dbSecurityGroup = new aws.ec2.SecurityGroup("db-sg", {
         vpcId: vpc.id,
