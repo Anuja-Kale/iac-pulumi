@@ -3,12 +3,13 @@ const aws = require("@pulumi/aws");
 
 // Retrieve configuration and secrets.
 const config = new pulumi.Config();
-//const dbPassword = config.requireSecret("dbPassword");
 
 function applyTags(additionalTags = {}) {
     let tags = { "Name": pulumi.getProject(), "Type": pulumi.getStack() };
     return { ...tags, ...additionalTags };
 }
+
+// Create a VPC, internet gateway, subnets, and route tables
 
 const vpc = new aws.ec2.Vpc("my-vpc", {
     cidrBlock: "10.0.0.0/16",
@@ -111,25 +112,27 @@ aws.getAvailabilityZones().then(azs => {
         tags: applyTags({ "Resource": "DbParameterGroup" }),
     });
 
-    // Create IAM role and instance profile for EC2 instances
-    const ec2Role = new aws.iam.Role("ec2-role", {
-        assumeRolePolicy: JSON.stringify({
-            Version: "2012-10-17",
-            Statement: [{
-                Action: "sts:AssumeRole",
-                Effect: "Allow",
-                Principal: {
-                    Service: "ec2.amazonaws.com"
-                }
-            }],
-        }),
-        tags: applyTags({ "Resource": "EC2Role" }),
-    });
-    const policy = new aws.iam.Policy("examplePolicy", {
-        policy: JSON.stringify({
-            Version: "2012-10-17",
-            Statement: [
-              {
+// IAM role and policy for EC2 instances
+
+const ec2Role = new aws.iam.Role("ec2-role", {
+    assumeRolePolicy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [{
+            Action: "sts:AssumeRole",
+            Effect: "Allow",
+            Principal: {
+                Service: "ec2.amazonaws.com"
+            }
+        }],
+    }),
+    tags: applyTags({ "Resource": "EC2Role" }),
+});
+
+const ec2Policy = new aws.iam.Policy("ec2-policy", {
+    policy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [
+            {
                 Effect: "Allow",
                 Action: [
                     "logs:CreateLogGroup",
@@ -140,25 +143,110 @@ aws.getAvailabilityZones().then(azs => {
                     "cloudwatch:GetMetricData",
                     "cloudwatch:GetMetricStatistics",
                     "cloudwatch:ListMetrics",
-                    "ec2:DescribeTags"
+                    "ec2:DescribeTags",
+                    "ec2:DescribeInstances",
+                    "ec2:DescribeInstanceStatus",
+                    // Add other necessary permissions for your EC2 instances
                 ],
                 Resource: "*"
-            }
-            ],
-        }),
-      });
-
-  // Attach the AWS managed CloudWatchAgentServerPolicy to the role
-  const policyAttachment = new aws.iam.RolePolicyAttachment("my-role-policy-attachment", {
-    role: ec2Role.name,
-    policyArn: policy.arn,
+            },
+        ],
+    }),
+    description: "Policy for EC2 instances",
 });
+
+const ec2PolicyAttachment = new aws.iam.RolePolicyAttachment("ec2-policy-attachment", {
+    role: ec2Role.name,
+    policyArn: ec2Policy.arn,
+});
+
+// Auto Scaling Role and Policy
+const autoScalingRole = new aws.iam.Role("autoScalingRole", {
+    assumeRolePolicy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [{
+            Effect: "Allow",
+            Principal: {
+                Service: "autoscaling.amazonaws.com",
+            },
+            Action: "sts:AssumeRole",
+        }],
+    }),
+    tags: applyTags({ "Resource": "AutoScalingRole" }),
+});
+
+const autoScalingPolicy = new aws.iam.Policy("autoScalingPolicy", {
+    description: "A policy for Auto Scaling access",
+    policy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [
+            {
+                Effect: "Allow",
+                Action: [
+                    "autoscaling:Describe*",
+                    "autoscaling:SetDesiredCapacity",
+                    "autoscaling:TerminateInstanceInAutoScalingGroup",
+                    "autoscaling:PutScalingPolicy",
+                    // Additional Auto Scaling-related permissions
+                ],
+                Resource: "*",
+            },
+        ],
+    }),
+});
+
+
+// Load Balancer Role and Policy
+const loadBalancerRole = new aws.iam.Role("loadBalancerRole", {
+    assumeRolePolicy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [{
+            Effect: "Allow",
+            Principal: {
+                Service: "elasticloadbalancing.amazonaws.com",
+            },
+            Action: "sts:AssumeRole",
+        }],
+    }),
+    tags: applyTags({ "Resource": "LoadBalancerRole" }),
+});
+
+const loadBalancerPolicy = new aws.iam.Policy("loadBalancerPolicy", {
+    description: "A policy for Load Balancer access",
+    policy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [
+            {
+                Effect: "Allow",
+                Action: [
+                    "elasticloadbalancing:Describe*",
+                    "elasticloadbalancing:AddTags",
+                    "elasticloadbalancing:CreateLoadBalancer",
+                    "elasticloadbalancing:RegisterTargets",
+                    // Additional Elastic Load Balancing-related permissions
+                ],
+                Resource: "*",
+            },
+        ],
+    }),
+});
+
+const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadBalancerRolePolicyAttachment", {
+    role: loadBalancerRole,
+    policyArn: loadBalancerPolicy.arn,
+});
+
+
+//   // Attach the AWS managed CloudWatchAgentServerPolicy to the role
+//   const ec2PolicyAttachment = new aws.iam.RolePolicyAttachment("ec2-policy-attachment", {
+//     role: ec2Role.name,
+//     policyArn: ec2Policy.arn,
+// });
 
 // Create an IAM instance profile for the EC2 instance
-const instanceProfile = new aws.iam.InstanceProfile("my-instance-profile", {
+const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
     role: ec2Role.name,
 });
-
 
     const dbInstance = new aws.rds.Instance("csye6225-db", {
         engine: "mysql",
@@ -196,7 +284,7 @@ const instanceProfile = new aws.iam.InstanceProfile("my-instance-profile", {
         tags: {
             "Name": "web-server-instance"
         },
-    }, { dependsOn: [policyAttachment] }); // Ensure that the EC2 instance is created after the policy attachment
+    }, { dependsOn: [ec2PolicyAttachment] }); // Ensure that the EC2 instance is created after the policy attachment
     
     const zone = pulumi.output(aws.route53.getZone({ name: "demo.awswebapp.tech" })); // Replace with your domain
     const domainName = ""; // Replace with your actual domain name
