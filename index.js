@@ -44,8 +44,8 @@ aws.getAvailabilityZones().then(azs => {
         }));
     }
 
-   // Load Balancer Security Group
-   const loadBalancerSg = new aws.ec2.SecurityGroup("lb-sg", {
+  // Create a Load Balancer Security Group.
+const loadBalancerSg = new aws.ec2.SecurityGroup("lb-sg", {
     vpcId: vpc.id,
     description: "Load balancer security group",
     ingress: [
@@ -57,6 +57,7 @@ aws.getAvailabilityZones().then(azs => {
     ],
     tags: applyTags({ "Name": "LoadBalancerSG" }),
 });
+
 
 // App Security Group - Updated to restrict access to the instance from the internet and allow traffic from the Load Balancer Security Group
 const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
@@ -75,6 +76,7 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
     tags: applyTags({ "Name": "AppSecurityGroup" }),
 });
 
+   // Create a Database Security Group.
     const dbSecurityGroup = new aws.ec2.SecurityGroup("db-sg", {
         vpcId: vpc.id,
         description: "Allow inbound MySQL traffic",
@@ -85,6 +87,7 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
         tags: applyTags({ "Name": "DbSecurityGroup" }),
     });
 
+    // Create route tables for public subnets.
     publicSubnets.forEach((subnet, index) => {
         const routeTable = new aws.ec2.RouteTable(`public-rt-${index}`, {
             vpcId: vpc.id,
@@ -101,6 +104,7 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
         });
     });
 
+    // Create route tables for private subnets.
     privateSubnets.forEach((subnet, index) => {
         const routeTable = new aws.ec2.RouteTable(`private-rt-${index}`, {
             vpcId: vpc.id,
@@ -113,6 +117,7 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
         });
     });
 
+    // Create an RDS Subnet Group.
     const dbSubnetGroup = new aws.rds.SubnetGroup("db-subnet-group", {
         subnetIds: privateSubnets.map(subnet => subnet.id),
         tags: applyTags({ "Resource": "DBSubnetGroup" }),
@@ -124,8 +129,7 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
         tags: applyTags({ "Resource": "DbParameterGroup" }),
     });
 
-// IAM role and policy for EC2 instances
-
+// Create an IAM role for EC2 instances.
 const ec2Role = new aws.iam.Role("ec2-role", {
     assumeRolePolicy: JSON.stringify({
         Version: "2012-10-17",
@@ -167,35 +171,53 @@ const ec2Policy = new aws.iam.Policy("ec2-policy", {
     description: "Policy for EC2 instances",
 });
 
+// Attach the IAM policy to the role.
 const ec2PolicyAttachment = new aws.iam.RolePolicyAttachment("ec2-policy-attachment", {
     role: ec2Role.name,
     policyArn: ec2Policy.arn,
 });
 
-// Create an IAM instance profile for EC2
+// Create an IAM instance profile for EC2 instances.
 const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
     role: ec2Role.name,
 });
 
 
-// Add your Launch Configuration here
+// Create an EC2 Launch Configuration.
 const launchConfig = new aws.ec2.LaunchConfiguration("asg-launch-config", {
-    imageId: "ami-01baf45938fd8c54e", // Replace with your AMI ID
+    imageId: "ami-01baf45938fd8c54e",
     instanceType: "t2.micro",
     keyName: "ec2-key",
     securityGroups: [appSecurityGroup.id],
     associatePublicIpAddress: true,
-    userData: `#!/bin/bash
-        echo "NODE_ENV=production" >> /etc/environment
-        # ... other user data scripts
-    `,
+    userData: "SAME_USER_DATA_AS_CURRENT_EC2_INSTANCE",
     iamInstanceProfile: instanceProfile.name,
-    lifecycle: {
-        createBeforeDestroy: true,
-    },
 });
 
-// Then your Auto Scaling Group
+// Create an Elastic Load Balancer.
+const elb = new aws.elb.LoadBalancer("my-load-balancer", {
+    subnets: publicSubnets.map(subnet => subnet.id),
+    securityGroups: [loadBalancerSg.id],
+    listeners: [{
+        instancePort: 8080, // Port where the instance is listening
+        instanceProtocol: "http",
+        lbPort: 8080, // Port where the Load Balancer is listening
+        lbProtocol: "http",
+    }],
+    healthCheck: {
+        target: "HTTP:8080/healthz", // Health check path and port
+        interval: 30,
+        healthyThreshold: 2,
+        unhealthyThreshold: 2,
+        timeout: 3,
+    },
+    //instances: [ec2Instance.id], // Assuming `ec2Instance` is the correct reference 
+    tags: applyTags({ "Name": "my-load-balancer" }),
+});
+//}, { dependsOn: [ec2Instance] }); // Make sure `ec2Instance` is declared and defined before this
+
+
+// Create an Auto Scaling Group.
 const autoScalingGroup = new aws.autoscaling.Group("my-auto-scaling-group", {
     launchConfiguration: launchConfig.id,
     minSize: 1,
@@ -208,9 +230,11 @@ const autoScalingGroup = new aws.autoscaling.Group("my-auto-scaling-group", {
         propagateAtLaunch: true,
     }],
     // Make sure that the Auto Scaling Group is created after the EC2 instance and Load Balancer
-}, { dependsOn: [ec2Instance, elb] });
+//}, { dependsOn: [ec2Instance, elb] });
+}, { dependsOn: [elb] });
 
-// Define scaling policies after the Auto Scaling Group
+
+// Create scaling policies for the Auto Scaling Group.
 const scaleUpPolicy = new aws.autoscaling.Policy("scale-up", {
     scalingAdjustment: 1,
     adjustmentType: "ChangeInCapacity",
@@ -225,9 +249,15 @@ const scaleDownPolicy = new aws.autoscaling.Policy("scale-down", {
     autoscalingGroupName: autoScalingGroup.name,
 });
 
-// Define CloudWatch alarms after scaling policies
+// Create CloudWatch alarms for CPU utilization.
 const cpuHighAlarm = new aws.cloudwatch.MetricAlarm("cpuHighAlarm", {
-    // ... other configurations
+    comparisonOperator: "GreaterThanOrEqualToThreshold", // Add this line
+    evaluationPeriods: 1, // You may need to specify other required properties
+    metricName: "CPUUtilization",
+    namespace: "AWS/EC2",
+    period: 60,
+    statistic: "Average",
+    threshold: 5, // Set your desired threshold value
     alarmActions: [scaleUpPolicy.arn],
     dimensions: {
         AutoScalingGroupName: autoScalingGroup.name,
@@ -235,12 +265,19 @@ const cpuHighAlarm = new aws.cloudwatch.MetricAlarm("cpuHighAlarm", {
 });
 
 const cpuLowAlarm = new aws.cloudwatch.MetricAlarm("cpuLowAlarm", {
-    // ... other configurations
+    comparisonOperator: "LessThanOrEqualToThreshold", // Add this line
+    evaluationPeriods: 1, // You may need to specify other required properties
+    metricName: "CPUUtilization",
+    namespace: "AWS/EC2",
+    period: 60,
+    statistic: "Average",
+    threshold: 3, // Set your desired threshold value
     alarmActions: [scaleDownPolicy.arn],
     dimensions: {
         AutoScalingGroupName: autoScalingGroup.name,
     },
 });
+
 
 // Auto Scaling Role and Policy
 const autoScalingRole = new aws.iam.Role("autoScalingRole", {
@@ -355,27 +392,6 @@ const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadB
 //     tags: applyTags({ "Name": "web-server-instance" }),
 // }, { dependsOn: [ec2PolicyAttachment] }); // Ensure that the EC2 instance is created after the policy attachment
 
-// Define Load Balancer
-const elb = new aws.elb.LoadBalancer("my-load-balancer", {
-    subnets: publicSubnets.map(subnet => subnet.id),
-    securityGroups: [loadBalancerSg.id],
-    listeners: [{
-        instancePort: 8080, // Port where the instance is listening
-        instanceProtocol: "http",
-        lbPort: 8080, // Port where the Load Balancer is listening
-        lbProtocol: "http",
-    }],
-    healthCheck: {
-        target: "HTTP:8080/healthz", // Health check path and port
-        interval: 30,
-        healthyThreshold: 2,
-        unhealthyThreshold: 2,
-        timeout: 3,
-    },
-    instances: [ec2Instance.id], // Assuming `ec2Instance` is the correct reference 
-    tags: applyTags({ "Name": "my-load-balancer" }),
-}, { dependsOn: [ec2Instance] }); // Make sure `ec2Instance` is declared and defined before this
-   
    
    // Retrieve the hosted zone by domain name
 const hostedZone = pulumi.output(aws.route53.getZone({ name: "demo.awswebapp.tech" }));
@@ -393,7 +409,7 @@ const aRecord = new aws.route53.Record("appARecord", {
 });
 
 // Export the DNS name of the instance and the load balancer
-exports.instanceDnsName = ec2Instance.publicDns;
+//exports.instanceDnsName = ec2Instance.publicDns;
 exports.loadBalancerDnsName = elb.dnsName;});
 
    //exports.loadBalancerDnsName = elb.dnsName;});
