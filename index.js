@@ -301,17 +301,6 @@ const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadB
 
    // Create EC2 instance
  const ec2Instance = new aws.ec2.Instance("app-instance", {
-    instanceType: "t2.micro",
-    ami: "ami-0b9be03711aff4b51", // Replace with your AMI ID
-    keyName: "ec2-key",
-    subnetId: publicSubnets[0].id, 
-    vpcSecurityGroupIds: [appSecurityGroup.id],
-    associatePublicIpAddress: true,
-    iamInstanceProfile: instanceProfile.name,
-    tags: applyTags({ "Name": "web-server-instance" }),
-    userData: `#!/bin/bash
-    const ec2Instance2 = new aws.ec2.Instance("app-instance", {
-        
         instanceType: "t2.micro",
         ami: "ami-01baf45938fd8c54e", // Replace with your AMI ID
         keyName: "ec2-key",
