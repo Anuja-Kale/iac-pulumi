@@ -58,6 +58,33 @@ aws.getAvailabilityZones().then(azs => {
     tags: applyTags({ "Name": "LoadBalancerSG" }),
 });
 
+// Define Load Balancer
+const elb = new aws.elb.LoadBalancer("my-load-balancer", {
+<<<<<<< Updated upstream
+    subnets: publicSubnets.map(subnet => subnet.id),
+    securityGroups: [loadBalancerSg.id],
+=======
+    // Remove the availabilityZones attribute
+>>>>>>> Stashed changes
+    listeners: [{
+        instancePort: 80,
+        instanceProtocol: "http",
+        lbPort: 80,
+        lbProtocol: "http",
+    }],
+    healthCheck: {
+        target: "HTTP:80/",
+        interval: 30,
+        healthyThreshold: 2,
+        unhealthyThreshold: 2,
+        timeout: 3,
+    },
+    instances: [ec2Instance.id], // Automatically register EC2 instance
+    tags: applyTags({ "Name": "my-load-balancer" }),
+}, { dependsOn: [ec2Instance] });
+
+
+
 // App Security Group
 const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
     vpcId: vpc.id,
@@ -284,14 +311,15 @@ const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadB
     vpcSecurityGroupIds: [appSecurityGroup.id],
     associatePublicIpAddress: true,
     iamInstanceProfile: instanceProfile.name,
-    userData: pulumi.interpolate`#!/bin/bash
-    echo "NODE_ENV=production" >> /etc/environment
-    endpoint=${dbInstance.endpoint}
-    echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
-    echo DB_USERNAME=csye6225 >> /etc/environment
-    echo DB_PASSWORD=root1234 >> /etc/environment
-    echo DB_DATABASE=csye6225 >> /etc/environment
-    # Commands for installing and starting CloudWatch Agent
+    tags: applyTags({ "Name": "web-server-instance" }),
+    userData: `#!/bin/bash
+        echo "NODE_ENV=production" >> /etc/environment
+        endpoint=${dbInstance.endpoint}
+        echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
+        echo DB_USERNAME=csye6225 >> /etc/environment
+        echo DB_PASSWORD=root1234 >> /etc/environment
+        echo DB_DATABASE=csye6225 >> /etc/environment
+        # Commands for installing and starting CloudWatch Agent
     `,
     tags: applyTags({ "Name": "web-server-instance" }),
 }, { dependsOn: [ec2PolicyAttachment] }); // Ensure that the EC2 instance is created after the policy attachment
