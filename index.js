@@ -58,25 +58,19 @@ aws.getAvailabilityZones().then(azs => {
     tags: applyTags({ "Name": "LoadBalancerSG" }),
 });
 
-// App Security Group
+// App Security Group - Updated to restrict access to the instance from the internet and allow traffic from the Load Balancer Security Group
 const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
     vpcId: vpc.id,
-    description: "Allow inbound HTTP, HTTPS, SSH, and custom traffic",
+    description: "Allow inbound SSH and custom application traffic from Load Balancer",
     ingress: [
-        { protocol: "tcp", fromPort: 80, toPort: 80, cidrBlocks: ["0.0.0.0/0"] },
-        { protocol: "tcp", fromPort: 443, toPort: 443, cidrBlocks: ["0.0.0.0/0"] },
-        { protocol: "tcp", fromPort: 8080, toPort: 8080, cidrBlocks: ["0.0.0.0/0"] },
-        { protocol: "tcp", fromPort: 22, toPort: 22, cidrBlocks: ["0.0.0.0/0"] },
-        { protocol: "tcp", fromPort: 80, toPort: 80, securityGroups: [loadBalancerSg.id] }
+        // Allows SSH access
+        { protocol: "tcp", fromPort: 22, toPort: 22, securityGroups: [loadBalancerSg.id] },
+        // Allows application traffic on the port your application runs
+        { protocol: "tcp", fromPort: 8080, toPort: 8080, securityGroups: [loadBalancerSg.id] },
     ],
     egress: [
-        { fromPort: 3306, toPort: 3306, protocol: "tcp", cidrBlocks: ["0.0.0.0/0"] },
-        {
-            fromPort: 443,
-            toPort: 443,
-            protocol: "tcp",
-            cidrBlocks: ["0.0.0.0/0"],
-        },
+        // Egress to allow everything out
+        { protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] },
     ],
     tags: applyTags({ "Name": "AppSecurityGroup" }),
 });
