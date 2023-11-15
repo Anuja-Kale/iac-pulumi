@@ -58,30 +58,6 @@ aws.getAvailabilityZones().then(azs => {
     tags: applyTags({ "Name": "LoadBalancerSG" }),
 });
 
-// Define Load Balancer
-const elb = new aws.elb.LoadBalancer("my-load-balancer", {
-    subnets: publicSubnets.map(subnet => subnet.id),
-    securityGroups: [loadBalancerSg.id],
-    // Remove the availabilityZones attribute
-    listeners: [{
-        instancePort: 80,
-        instanceProtocol: "http",
-        lbPort: 80,
-        lbProtocol: "http",
-    }],
-    healthCheck: {
-        target: "HTTP:80/",
-        interval: 30,
-        healthyThreshold: 2,
-        unhealthyThreshold: 2,
-        timeout: 3,
-    },
-    instances: [ec2Instance.id], // Automatically register EC2 instance
-    tags: applyTags({ "Name": "my-load-balancer" }),
-}, { dependsOn: [ec2Instance] });
-
-
-
 // App Security Group
 const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
     vpcId: vpc.id,
