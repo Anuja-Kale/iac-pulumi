@@ -60,12 +60,9 @@ aws.getAvailabilityZones().then(azs => {
 
 // Define Load Balancer
 const elb = new aws.elb.LoadBalancer("my-load-balancer", {
-<<<<<<< Updated upstream
     subnets: publicSubnets.map(subnet => subnet.id),
     securityGroups: [loadBalancerSg.id],
-=======
     // Remove the availabilityZones attribute
->>>>>>> Stashed changes
     listeners: [{
         instancePort: 80,
         instanceProtocol: "http",
@@ -313,6 +310,16 @@ const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
     iamInstanceProfile: instanceProfile.name,
     tags: applyTags({ "Name": "web-server-instance" }),
     userData: `#!/bin/bash
+    const ec2Instance2 = new aws.ec2.Instance("app-instance", {
+        
+        instanceType: "t2.micro",
+        ami: "ami-01baf45938fd8c54e", // Replace with your AMI ID
+        keyName: "ec2-key",
+        subnetId: publicSubnets[0].id,
+        vpcSecurityGroupIds: [appSecurityGroup.id],
+        associatePublicIpAddress: true,
+        iamInstanceProfile: instanceProfile.name,
+        userData: pulumi.interpolate`#!/bin/bash
         echo "NODE_ENV=production" >> /etc/environment
         endpoint=${dbInstance.endpoint}
         echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
