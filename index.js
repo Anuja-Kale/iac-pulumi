@@ -301,13 +301,13 @@ const elb = new aws.elb.LoadBalancer("my-load-balancer", {
     subnets: publicSubnets.map(subnet => subnet.id),
     securityGroups: [loadBalancerSg.id],
     listeners: [{
-        instancePort: 80,
+        instancePort: 8080, // Port where the instance is listening
         instanceProtocol: "http",
-        lbPort: 80,
+        lbPort: 8080, // Port where the Load Balancer is listening
         lbProtocol: "http",
     }],
     healthCheck: {
-        target: "HTTP:80/",
+        target: "HTTP:8080/healthz", // Health check path and port
         interval: 30,
         healthyThreshold: 2,
         unhealthyThreshold: 2,
