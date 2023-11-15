@@ -178,6 +178,11 @@ const ec2PolicyAttachment = new aws.iam.RolePolicyAttachment("ec2-policy-attachm
     policyArn: ec2Policy.arn,
 });
 
+// Create an IAM instance profile for EC2
+const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
+    role: ec2Role.name,
+});
+
 // Auto Scaling Role and Policy
 const autoScalingRole = new aws.iam.Role("autoScalingRole", {
     assumeRolePolicy: JSON.stringify({
@@ -259,7 +264,7 @@ const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadB
 //     policyArn: ec2Policy.arn,
 // });
 
-// Create an IAM instance profile for the EC2 instance
+// Create an RDS instance
  const dbInstance = new aws.rds.Instance("csye6225-db", {
         engine: "mysql",
         instanceClass: "db.t2.micro",
