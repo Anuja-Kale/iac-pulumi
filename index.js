@@ -62,15 +62,16 @@ const loadBalancerSg = new aws.ec2.SecurityGroup("lb-sg", {
 // App Security Group - Updated to restrict access to the instance from the internet and allow traffic from the Load Balancer Security Group
 const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
     vpcId: vpc.id,
-    description: "Allow inbound SSH and custom application traffic from Load Balancer",
+    description: "Allow inbound traffic only from the Load Balancer",
     ingress: [
-        // Allows SSH access
-        { protocol: "tcp", fromPort: 22, toPort: 22, securityGroups: [loadBalancerSg.id] },
-        // Allows application traffic on the port your application runs
-        { protocol: "tcp", fromPort: 8080, toPort: 8080, securityGroups: [loadBalancerSg.id] },
+        {
+            protocol: "tcp",
+            fromPort: 8080, // Your application's port
+            toPort: 8080, // Your application's port
+            securityGroups: [loadBalancerSg.id], // Allow access only from Load Balancer's security group
+        },
     ],
     egress: [
-        // Egress to allow everything out
         { protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] },
     ],
     tags: applyTags({ "Name": "AppSecurityGroup" }),
@@ -87,6 +88,37 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
         tags: applyTags({ "Name": "DbSecurityGroup" }),
     });
 
+     // Create an RDS Subnet Group.
+     const dbSubnetGroup = new aws.rds.SubnetGroup("db-subnet-group", {
+        subnetIds: privateSubnets.map(subnet => subnet.id),
+        tags: applyTags({ "Resource": "DBSubnetGroup" }),
+    });
+   
+    // Create an RDS Parameter Group.
+    const dbParameterGroup = new aws.rds.ParameterGroup("my-db-param-group", {
+        family: "mysql8.0",
+        parameters: [{ name: "character_set_client", value: "utf8" }],
+        tags: applyTags({ "Resource": "DbParameterGroup" }),
+    });
+
+    // Create an RDS instance
+const dbInstance = new aws.rds.Instance("csye6225-db", {
+    engine: "mysql",
+    instanceClass: "db.t2.micro",
+    allocatedStorage: 20,
+    storageType: "gp2",
+    name: "csye6225",
+    username: "csye6225",
+    password: "root1234",
+    parameterGroupName: dbParameterGroup.name,
+    skipFinalSnapshot: true,
+    vpcSecurityGroupIds: [dbSecurityGroup.id],
+    dbSubnetGroupName: dbSubnetGroup.name,
+    tags: applyTags({ "Resource": "RDSInstance" }),
+});
+
+
+    
     // Create route tables for public subnets.
     publicSubnets.forEach((subnet, index) => {
         const routeTable = new aws.ec2.RouteTable(`public-rt-${index}`, {
@@ -117,17 +149,6 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
         });
     });
 
-    // Create an RDS Subnet Group.
-    const dbSubnetGroup = new aws.rds.SubnetGroup("db-subnet-group", {
-        subnetIds: privateSubnets.map(subnet => subnet.id),
-        tags: applyTags({ "Resource": "DBSubnetGroup" }),
-    });
-
-    const dbParameterGroup = new aws.rds.ParameterGroup("my-db-param-group", {
-        family: "mysql8.0",
-        parameters: [{ name: "character_set_client", value: "utf8" }],
-        tags: applyTags({ "Resource": "DbParameterGroup" }),
-    });
 
 // Create an IAM role for EC2 instances.
 const ec2Role = new aws.iam.Role("ec2-role", {
@@ -183,56 +204,98 @@ const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
 });
 
 
-// Create an EC2 Launch Configuration.
-const launchConfig = new aws.ec2.LaunchConfiguration("asg-launch-config", {
-    imageId: "ami-01baf45938fd8c54e",
+const userData = `#!/bin/bash
+echo "NODE_ENV=production" >> /etc/environment
+endpoint=${dbInstance.endpoint}
+echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
+echo DB_USERNAME=csye6225 >> /etc/environment
+echo DB_PASSWORD=root1234 >> /etc/environment
+echo DB_DATABASE=csye6225 >> /etc/environment
+# Commands for installing and starting CloudWatch Agent
+`;
+
+const encodedUserData = Buffer.from(userData).toString('base64');
+
+// Launch Template instead of Launch Configuration
+const launchTemplate = new aws.ec2.LaunchTemplate("my-launch-template", {
+    imageId: "ami-0b9be03711aff4b51", // Replace with your AMI ID
     instanceType: "t2.micro",
     keyName: "ec2-key",
-    securityGroups: [appSecurityGroup.id],
-    associatePublicIpAddress: true,
-    userData: "SAME_USER_DATA_AS_CURRENT_EC2_INSTANCE",
-    iamInstanceProfile: instanceProfile.name,
+    networkInterfaces: [{
+        associatePublicIpAddress: true,
+        securityGroups: [appSecurityGroup.id],
+    }],
+    userData: encodedUserData, // Use the encoded user data
+    iamInstanceProfile: {
+        arn: instanceProfile.arn,
+    },
+    tagSpecifications: [{
+        resourceType: "instance",
+        tags: applyTags({ "Name": "web-server-instance" }),
+    }],
 });
 
-// Create an Elastic Load Balancer.
+
+
+
 const elb = new aws.elb.LoadBalancer("my-load-balancer", {
     subnets: publicSubnets.map(subnet => subnet.id),
     securityGroups: [loadBalancerSg.id],
     listeners: [{
-        instancePort: 8080, // Port where the instance is listening
+        instancePort: 8080,
         instanceProtocol: "http",
-        lbPort: 8080, // Port where the Load Balancer is listening
+        lbPort: 8080,
         lbProtocol: "http",
     }],
     healthCheck: {
-        target: "HTTP:8080/healthz", // Health check path and port
+        target: "HTTP:8080/healthz",
         interval: 30,
         healthyThreshold: 2,
         unhealthyThreshold: 2,
         timeout: 3,
     },
-    //instances: [ec2Instance.id], // Assuming `ec2Instance` is the correct reference 
     tags: applyTags({ "Name": "my-load-balancer" }),
 });
-//}, { dependsOn: [ec2Instance] }); // Make sure `ec2Instance` is declared and defined before this
 
 
-// Create an Auto Scaling Group.
+// Define a Target Group for the load balancer
+const targetGroup = new aws.lb.TargetGroup("target-group", {
+    port: 8080,
+    protocol: "HTTP",
+    vpcId: vpc.id,
+    targetType: "instance",
+    healthCheck: {
+        enabled: true,
+        path: "/healthz",
+        port: "8080",
+        protocol: "HTTP",
+        healthyThreshold: 3,
+        unhealthyThreshold: 5,
+        timeout: 5,
+        interval: 30,
+        matcher: "200",
+    },
+    tags: applyTags({ "Name": "target-group" }),
+});
+
+
+// Create an Auto Scaling Group using the launch template
 const autoScalingGroup = new aws.autoscaling.Group("my-auto-scaling-group", {
-    launchConfiguration: launchConfig.id,
+    vpcZoneIdentifiers: publicSubnets.map(subnet => subnet.id),
+    launchTemplate: {
+        id: launchTemplate.id,
+        version: "$Latest"
+    },
     minSize: 1,
     maxSize: 3,
     desiredCapacity: 1,
-    vpcZoneIdentifiers: publicSubnets.map(subnet => subnet.id),
+    targetGroupArns: [targetGroup.arn], // Assuming targetGroup is defined
     tags: [{
         key: "Name",
         value: "web-server-instance",
         propagateAtLaunch: true,
     }],
-    // Make sure that the Auto Scaling Group is created after the EC2 instance and Load Balancer
-//}, { dependsOn: [ec2Instance, elb] });
-}, { dependsOn: [elb] });
-
+}, { dependsOn: [elb] }); // Assuming elb is defined
 
 // Create scaling policies for the Auto Scaling Group.
 const scaleUpPolicy = new aws.autoscaling.Policy("scale-up", {
@@ -355,44 +418,6 @@ const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadB
     policyArn: loadBalancerPolicy.arn,
 })
 
-// Create an RDS instance
- const dbInstance = new aws.rds.Instance("csye6225-db", {
-        engine: "mysql",
-        instanceClass: "db.t2.micro",
-        allocatedStorage: 20,
-        storageType: "gp2",
-        name: "csye6225",
-        username: "csye6225",
-        password: "root1234",
-        parameterGroupName: dbParameterGroup.name,
-        skipFinalSnapshot: true,
-        vpcSecurityGroupIds: [dbSecurityGroup.id],
-        dbSubnetGroupName: dbSubnetGroup.name,
-        tags: applyTags({ "Resource": "RDSInstance" }),
-    });
-
-//    // Create EC2 instance
-//  const ec2Instance = new aws.ec2.Instance("app-instance", {
-//         instanceType: "t2.micro",
-//         ami: "ami-01baf45938fd8c54e", // Replace with your AMI ID
-//         keyName: "ec2-key",
-//         subnetId: publicSubnets[0].id,
-//         vpcSecurityGroupIds: [appSecurityGroup.id],
-//         associatePublicIpAddress: true,
-//         iamInstanceProfile: instanceProfile.name,
-//         userData: pulumi.interpolate`#!/bin/bash
-//         echo "NODE_ENV=production" >> /etc/environment
-//         endpoint=${dbInstance.endpoint}
-//         echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
-//         echo DB_USERNAME=csye6225 >> /etc/environment
-//         echo DB_PASSWORD=root1234 >> /etc/environment
-//         echo DB_DATABASE=csye6225 >> /etc/environment
-//         # Commands for installing and starting CloudWatch Agent
-//     `,
-//     tags: applyTags({ "Name": "web-server-instance" }),
-// }, { dependsOn: [ec2PolicyAttachment] }); // Ensure that the EC2 instance is created after the policy attachment
-
-   
    // Retrieve the hosted zone by domain name
 const hostedZone = pulumi.output(aws.route53.getZone({ name: "demo.awswebapp.tech" }));
 
