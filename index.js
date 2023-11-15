@@ -60,17 +60,25 @@ aws.getAvailabilityZones().then(azs => {
 
 // Define Load Balancer
 const elb = new aws.elb.LoadBalancer("my-load-balancer", {
-    availabilityZones: ["us-east-1a", "us-east-1b", "us-east-1c"], // Adjusted to us-east (Virginia)
+    subnets: publicSubnets.map(subnet => subnet.id),
+    securityGroups: [loadBalancerSg.id],
     listeners: [{
         instancePort: 80,
         instanceProtocol: "http",
         lbPort: 80,
         lbProtocol: "http",
     }],
-    securityGroups: [loadBalancerSg.id], // Attach the load balancer security group
-    subnets: publicSubnets.map(subnet => subnet.id), // Attach to the public subnets
+    healthCheck: {
+        target: "HTTP:80/",
+        interval: 30,
+        healthyThreshold: 2,
+        unhealthyThreshold: 2,
+        timeout: 3,
+    },
+    instances: [ec2Instance.id], // Automatically register EC2 instance
     tags: applyTags({ "Name": "my-load-balancer" }),
-});
+}, { dependsOn: [ec2Instance] });
+
 
 // App Security Group
 const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
@@ -268,13 +276,6 @@ const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadB
     policyArn: loadBalancerPolicy.arn,
 });
 
-
-//   // Attach the AWS managed CloudWatchAgentServerPolicy to the role
-//   const ec2PolicyAttachment = new aws.iam.RolePolicyAttachment("ec2-policy-attachment", {
-//     role: ec2Role.name,
-//     policyArn: ec2Policy.arn,
-// });
-
 // Create an IAM instance profile for the EC2 instance
 const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
     role: ec2Role.name,
@@ -295,16 +296,17 @@ const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
         tags: applyTags({ "Resource": "RDSInstance" }),
     });
 
-    const ec2Instance2 = new aws.ec2.Instance("app-instance", {
-        
-        instanceType: "t2.micro",
-        ami: "ami-01baf45938fd8c54e", // Replace with your AMI ID
-        keyName: "ec2-key",
-        subnetId: publicSubnets[0].id,
-        vpcSecurityGroupIds: [appSecurityGroup.id],
-        associatePublicIpAddress: true,
-        iamInstanceProfile: instanceProfile.name,
-        userData: pulumi.interpolate`#!/bin/bash
+    // Create EC2 instance
+    const ec2Instance = new aws.ec2.Instance("app-instance", {
+    instanceType: "t2.micro",
+    ami: "ami-01baf45938fd8c54e", // Replace with your AMI ID
+    keyName: "ec2-key",
+    subnetId: publicSubnets[0].id,
+    vpcSecurityGroupIds: [loadBalancerSg.id],
+    associatePublicIpAddress: true,
+    iamInstanceProfile: instanceProfile.name,
+    tags: applyTags({ "Name": "web-server-instance" }),
+    userData: `#!/bin/bash
         echo "NODE_ENV=production" >> /etc/environment
         endpoint=${dbInstance.endpoint}
         echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
@@ -312,11 +314,8 @@ const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
         echo DB_PASSWORD=root1234 >> /etc/environment
         echo DB_DATABASE=csye6225 >> /etc/environment
         # Commands for installing and starting CloudWatch Agent
-        `,
-        tags: {
-            "Name": "web-server-instance"
-        },
-    }, { dependsOn: [ec2PolicyAttachment] }); // Ensure that the EC2 instance is created after the policy attachment
+    `,
+}, { dependsOn: [ec2PolicyAttachment] });
     
     const zone = pulumi.output(aws.route53.getZone({ name: "demo.awswebapp.tech" })); // Replace with your domain
     const domainName = ""; // Replace with your actual domain name
