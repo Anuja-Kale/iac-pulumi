@@ -235,31 +235,37 @@ const launchTemplate = new aws.ec2.LaunchTemplate("my-launch-template", {
     }],
 });
 
-
-
-
-const elb = new aws.elb.LoadBalancer("my-load-balancer", {
+// Application Load Balancer (ALB)
+const alb = new aws.lb.LoadBalancer("app-load-balancer", {
     subnets: publicSubnets.map(subnet => subnet.id),
     securityGroups: [loadBalancerSg.id],
-    listeners: [{
-        instancePort: 8080,
-        instanceProtocol: "http",
-        lbPort: 8080,
-        lbProtocol: "http",
-    }],
-    healthCheck: {
-        target: "HTTP:8080/healthz",
-        interval: 30,
-        healthyThreshold: 2,
-        unhealthyThreshold: 2,
-        timeout: 3,
-    },
-    tags: applyTags({ "Name": "my-load-balancer" }),
+    loadBalancerType: "application", // Specify the type as 'application'
+    tags: applyTags({ "Name": "app-load-balancer" }),
 });
 
 
-// Define a Target Group for the load balancer
-const targetGroup = new aws.lb.TargetGroup("target-group", {
+// const elb = new aws.elb.LoadBalancer("my-load-balancer", {
+//     subnets: publicSubnets.map(subnet => subnet.id),
+//     securityGroups: [loadBalancerSg.id],
+//     listeners: [{
+//         instancePort: 8080,
+//         instanceProtocol: "http",
+//         lbPort: 8080,
+//         lbProtocol: "http",
+//     }],
+//     healthCheck: {
+//         target: "HTTP:8080/healthz",
+//         interval: 30,
+//         healthyThreshold: 2,
+//         unhealthyThreshold: 2,
+//         timeout: 3,
+//     },
+//     tags: applyTags({ "Name": "my-load-balancer" }),
+// });
+
+
+// Target Group
+const targetGroup = new aws.lb.TargetGroup("app-target-group", {
     port: 8080,
     protocol: "HTTP",
     vpcId: vpc.id,
@@ -275,9 +281,20 @@ const targetGroup = new aws.lb.TargetGroup("target-group", {
         interval: 30,
         matcher: "200",
     },
-    tags: applyTags({ "Name": "target-group" }),
+    tags: applyTags({ "Name": "app-target-group" }),
 });
 
+
+// Listener
+const listener = new aws.lb.Listener("app-listener", {
+    loadBalancerArn: alb.arn,
+    port: 80,
+    protocol: "HTTP",
+    defaultActions: [{
+        type: "forward",
+        targetGroupArn: targetGroup.arn,
+    }],
+});
 
 // Create an Auto Scaling Group using the launch template
 const autoScalingGroup = new aws.autoscaling.Group("my-auto-scaling-group", {
@@ -289,13 +306,13 @@ const autoScalingGroup = new aws.autoscaling.Group("my-auto-scaling-group", {
     minSize: 1,
     maxSize: 3,
     desiredCapacity: 1,
-    targetGroupArns: [targetGroup.arn], // Assuming targetGroup is defined
+    targetGroupArns: [targetGroup.arn],
     tags: [{
         key: "Name",
         value: "web-server-instance",
         propagateAtLaunch: true,
     }],
-}, { dependsOn: [elb] }); // Assuming elb is defined
+}, { dependsOn: [listener] }); // Depend on the listener, not the ELB
 
 // Create scaling policies for the Auto Scaling Group.
 const scaleUpPolicy = new aws.autoscaling.Policy("scale-up", {
@@ -421,21 +438,24 @@ const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadB
    // Retrieve the hosted zone by domain name
 const hostedZone = pulumi.output(aws.route53.getZone({ name: "demo.awswebapp.tech" }));
 
-// Define the A record
+// Define the A record using the ALB's DNS name and Zone ID
 const aRecord = new aws.route53.Record("appARecord", {
     zoneId: hostedZone.id,
     name: "demo.awswebapp.tech", // The domain name for the record
     type: "A", // Type A record
     aliases: [{
-        name: elb.dnsName, // The DNS name of your ELB
-        zoneId: elb.zoneId, // The hosted zone ID of your ELB
+        name: alb.dnsName, // The DNS name of your ALB
+        zoneId: alb.zoneId, // The hosted zone ID of your ALB
         evaluateTargetHealth: true,
     }],
 });
 
+// Export the DNS name of the load balancer
+exports.loadBalancerDnsName = alb.dnsName;});
+
 // Export the DNS name of the instance and the load balancer
 //exports.instanceDnsName = ec2Instance.publicDns;
-exports.loadBalancerDnsName = elb.dnsName;});
+//exports.loadBalancerDnsName = elb.dnsName;});
 
    //exports.loadBalancerDnsName = elb.dnsName;});
 
