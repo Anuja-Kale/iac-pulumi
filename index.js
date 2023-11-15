@@ -177,6 +177,71 @@ const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
     role: ec2Role.name,
 });
 
+
+// Add your Launch Configuration here
+const launchConfig = new aws.ec2.LaunchConfiguration("asg-launch-config", {
+    imageId: "ami-01baf45938fd8c54e", // Replace with your AMI ID
+    instanceType: "t2.micro",
+    keyName: "ec2-key",
+    securityGroups: [appSecurityGroup.id],
+    associatePublicIpAddress: true,
+    userData: `#!/bin/bash
+        echo "NODE_ENV=production" >> /etc/environment
+        # ... other user data scripts
+    `,
+    iamInstanceProfile: instanceProfile.name,
+    lifecycle: {
+        createBeforeDestroy: true,
+    },
+});
+
+// Then your Auto Scaling Group
+const autoScalingGroup = new aws.autoscaling.Group("my-auto-scaling-group", {
+    launchConfiguration: launchConfig.id,
+    minSize: 1,
+    maxSize: 3,
+    desiredCapacity: 1,
+    vpcZoneIdentifiers: publicSubnets.map(subnet => subnet.id),
+    tags: [{
+        key: "Name",
+        value: "web-server-instance",
+        propagateAtLaunch: true,
+    }],
+    // Make sure that the Auto Scaling Group is created after the EC2 instance and Load Balancer
+}, { dependsOn: [ec2Instance, elb] });
+
+// Define scaling policies after the Auto Scaling Group
+const scaleUpPolicy = new aws.autoscaling.Policy("scale-up", {
+    scalingAdjustment: 1,
+    adjustmentType: "ChangeInCapacity",
+    cooldown: 60,
+    autoscalingGroupName: autoScalingGroup.name,
+});
+
+const scaleDownPolicy = new aws.autoscaling.Policy("scale-down", {
+    scalingAdjustment: -1,
+    adjustmentType: "ChangeInCapacity",
+    cooldown: 60,
+    autoscalingGroupName: autoScalingGroup.name,
+});
+
+// Define CloudWatch alarms after scaling policies
+const cpuHighAlarm = new aws.cloudwatch.MetricAlarm("cpuHighAlarm", {
+    // ... other configurations
+    alarmActions: [scaleUpPolicy.arn],
+    dimensions: {
+        AutoScalingGroupName: autoScalingGroup.name,
+    },
+});
+
+const cpuLowAlarm = new aws.cloudwatch.MetricAlarm("cpuLowAlarm", {
+    // ... other configurations
+    alarmActions: [scaleDownPolicy.arn],
+    dimensions: {
+        AutoScalingGroupName: autoScalingGroup.name,
+    },
+});
+
 // Auto Scaling Role and Policy
 const autoScalingRole = new aws.iam.Role("autoScalingRole", {
     assumeRolePolicy: JSON.stringify({
@@ -252,11 +317,6 @@ const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadB
     role: loadBalancerRole,
     policyArn: loadBalancerPolicy.arn,
 })
-//   // Attach the AWS managed CloudWatchAgentServerPolicy to the role
-//   const ec2PolicyAttachment = new aws.iam.RolePolicyAttachment("ec2-policy-attachment", {
-//     role: ec2Role.name,
-//     policyArn: ec2Policy.arn,
-// });
 
 // Create an RDS instance
  const dbInstance = new aws.rds.Instance("csye6225-db", {
@@ -274,26 +334,26 @@ const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadB
         tags: applyTags({ "Resource": "RDSInstance" }),
     });
 
-   // Create EC2 instance
- const ec2Instance = new aws.ec2.Instance("app-instance", {
-        instanceType: "t2.micro",
-        ami: "ami-01baf45938fd8c54e", // Replace with your AMI ID
-        keyName: "ec2-key",
-        subnetId: publicSubnets[0].id,
-        vpcSecurityGroupIds: [appSecurityGroup.id],
-        associatePublicIpAddress: true,
-        iamInstanceProfile: instanceProfile.name,
-        userData: pulumi.interpolate`#!/bin/bash
-        echo "NODE_ENV=production" >> /etc/environment
-        endpoint=${dbInstance.endpoint}
-        echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
-        echo DB_USERNAME=csye6225 >> /etc/environment
-        echo DB_PASSWORD=root1234 >> /etc/environment
-        echo DB_DATABASE=csye6225 >> /etc/environment
-        # Commands for installing and starting CloudWatch Agent
-    `,
-    tags: applyTags({ "Name": "web-server-instance" }),
-}, { dependsOn: [ec2PolicyAttachment] }); // Ensure that the EC2 instance is created after the policy attachment
+//    // Create EC2 instance
+//  const ec2Instance = new aws.ec2.Instance("app-instance", {
+//         instanceType: "t2.micro",
+//         ami: "ami-01baf45938fd8c54e", // Replace with your AMI ID
+//         keyName: "ec2-key",
+//         subnetId: publicSubnets[0].id,
+//         vpcSecurityGroupIds: [appSecurityGroup.id],
+//         associatePublicIpAddress: true,
+//         iamInstanceProfile: instanceProfile.name,
+//         userData: pulumi.interpolate`#!/bin/bash
+//         echo "NODE_ENV=production" >> /etc/environment
+//         endpoint=${dbInstance.endpoint}
+//         echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
+//         echo DB_USERNAME=csye6225 >> /etc/environment
+//         echo DB_PASSWORD=root1234 >> /etc/environment
+//         echo DB_DATABASE=csye6225 >> /etc/environment
+//         # Commands for installing and starting CloudWatch Agent
+//     `,
+//     tags: applyTags({ "Name": "web-server-instance" }),
+// }, { dependsOn: [ec2PolicyAttachment] }); // Ensure that the EC2 instance is created after the policy attachment
 
 // Define Load Balancer
 const elb = new aws.elb.LoadBalancer("my-load-balancer", {
@@ -317,18 +377,25 @@ const elb = new aws.elb.LoadBalancer("my-load-balancer", {
 }, { dependsOn: [ec2Instance] }); // Make sure `ec2Instance` is declared and defined before this
    
    
-    const zone = pulumi.output(aws.route53.getZone({ name: "demo.awswebapp.tech" })); // Replace with your domain
-    const domainName = ""; // Replace with your actual domain name
+   // Retrieve the hosted zone by domain name
+const hostedZone = pulumi.output(aws.route53.getZone({ name: "demo.awswebapp.tech" }));
 
-    const record = new aws.route53.Record("app-a-record", {
-        zoneId: zone.id,
-        name: domainName, 
-        type: "A",
-        ttl: 60,
-        records: [ec2Instance.publicIp],
-    }, { dependsOn: [ec2Instance] }); // Ensure that the A record is created after the EC2 instance
-    
-    exports.instanceDnsName = ec2Instance.publicDns,
-    exports.loadBalancerDnsName = elb.dnsName;});
+// Define the A record
+const aRecord = new aws.route53.Record("appARecord", {
+    zoneId: hostedZone.id,
+    name: "demo.awswebapp.tech", // The domain name for the record
+    type: "A", // Type A record
+    aliases: [{
+        name: elb.dnsName, // The DNS name of your ELB
+        zoneId: elb.zoneId, // The hosted zone ID of your ELB
+        evaluateTargetHealth: true,
+    }],
+});
+
+// Export the DNS name of the instance and the load balancer
+exports.instanceDnsName = ec2Instance.publicDns;
+exports.loadBalancerDnsName = elb.dnsName;});
+
+   //exports.loadBalancerDnsName = elb.dnsName;});
 
     
