@@ -58,30 +58,6 @@ aws.getAvailabilityZones().then(azs => {
     tags: applyTags({ "Name": "LoadBalancerSG" }),
 });
 
-// Define Load Balancer
-const elb = new aws.elb.LoadBalancer("my-load-balancer", {
-    subnets: publicSubnets.map(subnet => subnet.id),
-    securityGroups: [loadBalancerSg.id],
-    // Remove the availabilityZones attribute
-    listeners: [{
-        instancePort: 80,
-        instanceProtocol: "http",
-        lbPort: 80,
-        lbProtocol: "http",
-    }],
-    healthCheck: {
-        target: "HTTP:80/",
-        interval: 30,
-        healthyThreshold: 2,
-        unhealthyThreshold: 2,
-        timeout: 3,
-    },
-    instances: [ec2Instance.id], // Automatically register EC2 instance
-    tags: applyTags({ "Name": "my-load-balancer" }),
-}, { dependsOn: [ec2Instance] });
-
-
-
 // App Security Group
 const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
     vpcId: vpc.id,
@@ -301,17 +277,6 @@ const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadB
 
    // Create EC2 instance
  const ec2Instance = new aws.ec2.Instance("app-instance", {
-    instanceType: "t2.micro",
-    ami: "ami-0b9be03711aff4b51", // Replace with your AMI ID
-    keyName: "ec2-key",
-    subnetId: publicSubnets[0].id, 
-    vpcSecurityGroupIds: [appSecurityGroup.id],
-    associatePublicIpAddress: true,
-    iamInstanceProfile: instanceProfile.name,
-    tags: applyTags({ "Name": "web-server-instance" }),
-    userData: `#!/bin/bash
-    const ec2Instance2 = new aws.ec2.Instance("app-instance", {
-        
         instanceType: "t2.micro",
         ami: "ami-01baf45938fd8c54e", // Replace with your AMI ID
         keyName: "ec2-key",
