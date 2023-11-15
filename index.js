@@ -60,8 +60,12 @@ aws.getAvailabilityZones().then(azs => {
 
 // Define Load Balancer
 const elb = new aws.elb.LoadBalancer("my-load-balancer", {
+<<<<<<< Updated upstream
     subnets: publicSubnets.map(subnet => subnet.id),
     securityGroups: [loadBalancerSg.id],
+=======
+    // Remove the availabilityZones attribute
+>>>>>>> Stashed changes
     listeners: [{
         instancePort: 80,
         instanceProtocol: "http",
@@ -78,6 +82,7 @@ const elb = new aws.elb.LoadBalancer("my-load-balancer", {
     instances: [ec2Instance.id], // Automatically register EC2 instance
     tags: applyTags({ "Name": "my-load-balancer" }),
 }, { dependsOn: [ec2Instance] });
+
 
 
 // App Security Group
@@ -270,6 +275,7 @@ const loadBalancerPolicy = new aws.iam.Policy("loadBalancerPolicy", {
         ],
     }),
 });
+
 
 const loadBalancerRolePolicyAttachment = new aws.iam.RolePolicyAttachment("loadBalancerRolePolicyAttachment", {
     role: loadBalancerRole,
