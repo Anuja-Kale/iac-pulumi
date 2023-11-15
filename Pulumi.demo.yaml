@@ -2,8 +2,6 @@ config:
   my-pulumi-proj:amiid: "ami-01baf45938fd8c54e"
   my-pulumi-proj:cidr: 192.168.0.0/24
   my-pulumi-proj:cidrEnd: 192.168.0.255
-  my-pulumi-proj:dbPassword:
-    secure: AAABALz2dfKKf7wDMba0ZPcNXi7v8ULJ9xEI/M32fFLgwXa/De+gDKcNeQSVOg==
   my-pulumi-proj:internetGatewayName: my-internet-gateway
   my-pulumi-proj:privateRouteTableName: my-private-route-table
   my-pulumi-proj:publicRouteCidrBlock: 0.0.0.0/0

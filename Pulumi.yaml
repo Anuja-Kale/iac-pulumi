@@ -1,4 +1,4 @@
-name: web-server-instance
+name: my-pulumi-proj
 runtime:
   name: nodejs
   options:
