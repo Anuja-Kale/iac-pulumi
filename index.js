@@ -203,7 +203,7 @@ const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
     role: ec2Role.name,
 });
 
-
+// User Data Script
 const userData = `#!/bin/bash
 echo "NODE_ENV=production" >> /etc/environment
 endpoint=${dbInstance.endpoint}
@@ -211,7 +211,7 @@ echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
 echo DB_USERNAME=csye6225 >> /etc/environment
 echo DB_PASSWORD=root1234 >> /etc/environment
 echo DB_DATABASE=csye6225 >> /etc/environment
-# Commands for installing and starting CloudWatch Agent
+# Add your application setup and launch commands here
 `;
 
 const encodedUserData = Buffer.from(userData).toString('base64');
