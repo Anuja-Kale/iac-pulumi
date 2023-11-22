@@ -70,6 +70,12 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("app-sg", {
             toPort: 8080, // Your application's port
             securityGroups: [loadBalancerSg.id], // Allow access only from Load Balancer's security group
         },
+            {
+              fromPort: 22,
+              toPort: 22,
+              protocol: "tcp",
+              cidrBlocks: ["0.0.0.0/0"], // Allow SSH from anywhere
+            },
     ],
     egress: [
         { protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] },
@@ -203,18 +209,18 @@ const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
     role: ec2Role.name,
 });
 
-// User Data Script
-const userData = `#!/bin/bash
-echo "NODE_ENV=production" >> /etc/environment
-endpoint=${dbInstance.endpoint}
-echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
-echo DB_USERNAME=csye6225 >> /etc/environment
-echo DB_PASSWORD=root1234 >> /etc/environment
-echo DB_DATABASE=csye6225 >> /etc/environment
-# Add your application setup and launch commands here
-`;
+// // User Data Script
+// const userData = `#!/bin/bash
+// echo "NODE_ENV=production" >> /etc/environment
+// endpoint=${dbInstance.endpoint}
+// echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
+// echo DB_USERNAME=csye6225 >> /etc/environment
+// echo DB_PASSWORD=root1234 >> /etc/environment
+// echo DB_DATABASE=csye6225 >> /etc/environment
+// # Add your application setup and launch commands here
+// `;
 
-const encodedUserData = Buffer.from(userData).toString('base64');
+//const encodedUserData = Buffer.from(userData).toString('base64');
 
 // Launch Template instead of Launch Configuration
 const launchTemplate = new aws.ec2.LaunchTemplate("my-launch-template", {
@@ -225,7 +231,17 @@ const launchTemplate = new aws.ec2.LaunchTemplate("my-launch-template", {
         associatePublicIpAddress: true,
         securityGroups: [appSecurityGroup.id],
     }],
-    userData: encodedUserData, // Use the encoded user data
+    userData: pulumi.interpolate`#!/bin/bash
+    echo "NODE_ENV=production" >> /etc/environment
+    endpoint="${dbInstance.endpoint}"
+    echo "DB_HOST=\${endpoint%:*}" >> /etc/environment
+    echo DB_USERNAME=csye6225 >> /etc/environment
+    echo DB_PASSWORD=root1234 >> /etc/environment
+    echo DB_DATABASE=csye6225 >> /etc/environment
+    sudo systemctl start webapp
+    sudo systemctl restart amazon-cloudwatch-agent
+  `.apply((s) => Buffer.from(s).toString("base64")),
+
     iamInstanceProfile: {
         arn: instanceProfile.arn,
     },
@@ -355,7 +371,7 @@ const cpuLowAlarm = new aws.cloudwatch.MetricAlarm("cpuLowAlarm", {
     alarmActions: [scaleDownPolicy.arn],
     dimensions: {
         AutoScalingGroupName: autoScalingGroup.name,
-    },
+    }
 });
 
 
