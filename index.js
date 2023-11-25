@@ -155,6 +155,15 @@ const dbInstance = new aws.rds.Instance("csye6225-db", {
         });
     });
 
+    // Create an Amazon SNS topic
+const snsTopic = new aws.sns.Topic("my-sns-topic", {
+    displayName: "webapp-notifications", // A user-friendly name for the SNS topic
+    tags: applyTags({ "Resource": "SNSTopic" }),
+});
+
+// Export the ARN of the SNS topic
+exports.snsTopicArn = snsTopic.arn;
+
 
 // Create an IAM role for EC2 instances.
 const ec2Role = new aws.iam.Role("ec2-role", {
