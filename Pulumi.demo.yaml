@@ -1,0 +1,10 @@
+config:
+  my-pulumi-proj:amiid: "ami-0b9be03711aff4b51"
+  my-pulumi-proj:cidr: 192.168.0.0/24
+  my-pulumi-proj:cidrEnd: 192.168.0.255
+  my-pulumi-proj:internetGatewayName: my-internet-gateway
+  my-pulumi-proj:privateRouteTableName: my-private-route-table
+  my-pulumi-proj:publicRouteCidrBlock: 0.0.0.0/0
+  my-pulumi-proj:publicRouteTableName: my-public-route-table
+  my-pulumi-proj:vpcCidr: 10.0.0.0/16
+  my-pulumi-proj:vpcName: my-vpc
