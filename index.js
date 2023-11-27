@@ -1,5 +1,6 @@
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
+const gcp = require("@pulumi/gcp");
 
 // Retrieve configuration and secrets.
 const config = new pulumi.Config();
@@ -163,7 +164,6 @@ const snsTopic = new aws.sns.Topic("my-sns-topic", {
 
 // Export the ARN of the SNS topic
 exports.snsTopicArn = snsTopic.arn;
-
 
 // Create an IAM role for EC2 instances.
 const ec2Role = new aws.iam.Role("ec2-role", {
@@ -475,13 +475,89 @@ const aRecord = new aws.route53.Record("appARecord", {
     }],
 });
 
+// Create a Google Cloud Storage bucket
+const bucket = new gcp.storage.Bucket("my-bucket", {
+    location: "US",
+});
+
+// Create a Google Service Account
+const serviceAccount = new gcp.serviceAccount.Account("my-service-account", {
+    accountId: "my-service-account-123",
+    displayName: "My Service Account",
+});
+
+// Create a Google Service Account Key
+const serviceAccountKey = new gcp.serviceAccount.Key("my-service-account-key", {
+    serviceAccountId: serviceAccount.accountId,
+    publicKeyType: "TYPE_X509_PEM_FILE",
+});
+
+
+// IAM role for Lambda Function
+const lambdaRole = new aws.iam.Role("lambdaRole", {
+    assumeRolePolicy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [
+            {
+                Action: "sts:AssumeRole",
+                Effect: "Allow",
+                Principal: {
+                    Service: "lambda.amazonaws.com",
+                },
+            },
+        ],
+    }),
+    tags: applyTags({ "Resource": "LambdaRole" }),
+});
+
+// IAM policy for Lambda Function
+const lambdaPolicy = new aws.iam.Policy("lambdaPolicy", {
+    policy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [
+            {
+                Action: ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+                Resource: "arn:aws:logs:*:*:*",
+                Effect: "Allow",
+            },
+            // Additional permissions can be added here
+        ],
+    }),
+});
+
+// Attach the policy to the role
+new aws.iam.RolePolicyAttachment("lambdaPolicyAttachment", {
+    role: lambdaRole.name,
+    policyArn: lambdaPolicy.arn,
+});
+
+// Create a Lambda function
+const lambdaFunction = new aws.lambda.Function("myLambdaFunction", {
+    runtime: "nodejs14.x",
+    role: lambdaRole.arn,
+    handler: "index.handler", // Update this to your handler
+    code: new pulumi.asset.AssetArchive({
+        ".": new pulumi.asset.FileArchive("./path/to/your/lambda/code.zip"),
+    }),
+    environment: {
+        variables: {
+            GCS_BUCKET_NAME: bucket.name,
+            GCS_SERVICE_ACCOUNT_KEY: serviceAccountKey.privateKey,
+            // Additional environment variables
+        },
+    },
+});
+
+
+
+// Export outputs
+exports.bucketName = bucket.name;
+exports.serviceAccountEmail = serviceAccount.email;
+exports.serviceAccountKey = serviceAccountKey.privateKey;
+exports.lambdaFunctionName = lambdaFunction.name;
+exports.loadBalancerDnsName = alb.dnsName;
+
+
+
 // Export the DNS name of the load balancer
 exports.loadBalancerDnsName = alb.dnsName;});
-
-// Export the DNS name of the instance and the load balancer
-//exports.instanceDnsName = ec2Instance.publicDns;
-//exports.loadBalancerDnsName = elb.dnsName;});
-
-   //exports.loadBalancerDnsName = elb.dnsName;});
-
-    
