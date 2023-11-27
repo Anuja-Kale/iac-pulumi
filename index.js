@@ -1,6 +1,7 @@
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
 const gcp = require("@pulumi/gcp");
+const mailgun = require("@pulumi/mailgun");
 
 // Retrieve configuration and secrets.
 const config = new pulumi.Config();
