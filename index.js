@@ -481,15 +481,14 @@ const bucket = new gcp.storage.Bucket("my-bucket", {
 });
 
 // Create a Google Service Account
-const serviceAccount = new gcp.serviceAccount.Account("my-service-account", {
-    accountId: "my-service-account-123",
-    displayName: "My Service Account",
-});
+const serviceAccount = new gcp.serviceaccount.Account("my-service-account-uq-ar", {
+    accountId: "my-service-account-uq-ar",
+    displayName: "My Service Account-uq-ar",
+  });
 
 // Create a Google Service Account Key
-const serviceAccountKey = new gcp.serviceAccount.Key("my-service-account-key", {
-    serviceAccountId: serviceAccount.accountId,
-    publicKeyType: "TYPE_X509_PEM_FILE",
+const serviceAccountKey = new gcp.serviceaccount.Key("my-service-account-key", {
+    serviceAccountId: serviceAccount.name, // This refers to the name (not accountId) of the service account
 });
 
 
@@ -535,10 +534,8 @@ new aws.iam.RolePolicyAttachment("lambdaPolicyAttachment", {
 const lambdaFunction = new aws.lambda.Function("myLambdaFunction", {
     runtime: "nodejs14.x",
     role: lambdaRole.arn,
-    handler: "index.handler", // Update this to your handler
-    code: new pulumi.asset.AssetArchive({
-        ".": new pulumi.asset.FileArchive("./path/to/your/lambda/code.zip"),
-    }),
+    handler: "index.handler", // The function within your code that will be called
+    code: new pulumi.asset.RemoteArchive("https://github.com/tparikh/myrepo/archive/refs/tags/v1.0.0.zip"),
     environment: {
         variables: {
             GCS_BUCKET_NAME: bucket.name,
