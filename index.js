@@ -476,77 +476,108 @@ const aRecord = new aws.route53.Record("appARecord", {
     }],
 });
 
-// Create a Google Cloud Storage bucket
-const bucket = new gcp.storage.Bucket("my-bucket", {
+// GCP Storage Bucket
+const bucket = new gcp.storage.Bucket("bucket_submission_github", {
     location: "US",
+    storageClass: "STANDARD",
+    labels: {
+        "env": "prod",
+        "name": "bucket_submission_github"
+    }
 });
 
-// Create a Google Service Account
-const serviceAccount = new gcp.serviceaccount.Account("my-service-account-uq-ar", {
-    accountId: "my-service-account-uq-ar",
-    displayName: "My Service Account-uq-ar",
-  });
-
-// Create a Google Service Account Key
-const serviceAccountKey = new gcp.serviceaccount.Key("my-service-account-key", {
-    serviceAccountId: serviceAccount.name, // This refers to the name (not accountId) of the service account
+// GCP Service Account
+const serviceAccount = new gcp.serviceaccount.Account("submission-service-account", {
+    accountId: "submission-service-account",
+    displayName: "Submission Service Account",
 });
 
+// GCP Service Account Key
+const serviceAccountKey = new gcp.serviceaccount.Key("submission-service-account-key", {
+    serviceAccountId: serviceAccount.name,
+});
 
-// IAM role for Lambda Function
+// Bucket IAM Binding
+const bucketIamBinding = new gcp.storage.BucketIAMBinding("bucket-iam-binding", {
+    bucket: bucket.name,
+    role: "roles/storage.admin",
+    members: [pulumi.interpolate`serviceAccount:${serviceAccount.email}`],
+});
+
+// AWS Secrets Manager to store GCS bucket name and service account key
+const gcsBucketSecret = new aws.secretsmanager.Secret("gcsBucketSecret", {
+    name: "gcsBucketSecret"
+});
+
+const gcsBucketSecretVersion = new aws.secretsmanager.SecretVersion("gcsBucketSecretVersion", {
+    secretId: gcsBucketSecret.id,
+    secretString: bucket.name,
+});
+
+const gcsServiceAccountKeySecret = new aws.secretsmanager.Secret("gcsServiceAccountKeySecret", {
+    name: "gcsServiceAccountKeySecret"
+});
+
+const gcsServiceAccountKeySecretVersion = new aws.secretsmanager.SecretVersion("gcsServiceAccountKeySecretVersion", {
+    secretId: gcsServiceAccountKeySecret.id,
+    secretString: serviceAccountKey.privateKey,
+});
+
+// IAM Role for Lambda
 const lambdaRole = new aws.iam.Role("lambdaRole", {
     assumeRolePolicy: JSON.stringify({
         Version: "2012-10-17",
-        Statement: [
-            {
-                Action: "sts:AssumeRole",
-                Effect: "Allow",
-                Principal: {
-                    Service: "lambda.amazonaws.com",
-                },
-            },
-        ],
+        Statement: [{
+            Action: "sts:AssumeRole",
+            Effect: "Allow",
+            Principal: {
+                Service: "lambda.amazonaws.com"
+            }
+        }]
     }),
-    tags: applyTags({ "Resource": "LambdaRole" }),
 });
 
-// IAM policy for Lambda Function
+// IAM Policy for Lambda
 const lambdaPolicy = new aws.iam.Policy("lambdaPolicy", {
     policy: JSON.stringify({
         Version: "2012-10-17",
-        Statement: [
-            {
-                Action: ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
-                Resource: "arn:aws:logs:*:*:*",
-                Effect: "Allow",
-            },
-            // Additional permissions can be added here
-        ],
+        Statement: [{
+            Action: [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+                "sns:Publish",
+                "dynamodb:PutItem",
+                "dynamodb:GetItem",
+                "ses:SendEmail",
+                "ses:SendRawEmail"
+            ],
+            Resource: "*",
+            Effect: "Allow"
+        }]
     }),
 });
 
-// Attach the policy to the role
-new aws.iam.RolePolicyAttachment("lambdaPolicyAttachment", {
+// Attach the Policy to the Role
+const lambdaRolePolicyAttachment = new aws.iam.RolePolicyAttachment("lambdaRolePolicyAttachment", {
     role: lambdaRole.name,
-    policyArn: lambdaPolicy.arn,
+    policyArn: lambdaPolicy.arn
 });
 
-// Create a Lambda function
-const lambdaFunction = new aws.lambda.Function("myLambdaFunction", {
-    runtime: "nodejs14.x",
+// Lambda Function
+const lambdaFunction = new aws.lambda.Function("submissionLambda", {
+    runtime: aws.lambda.Runtime.NodeJS14dX,
     role: lambdaRole.arn,
-    handler: "index.handler", // The function within your code that will be called
-    code: new pulumi.asset.FileArchive("/Users/anujakale/Desktop/lambda-function.zip"), // Local zip file path
+    handler: "index.handler",
+    code: new pulumi.asset.FileArchive("./lambda-function.zip"), // Assuming you have a local path to your Lambda function code
     environment: {
         variables: {
             GCS_BUCKET_NAME: bucket.name,
             GCS_SERVICE_ACCOUNT_KEY: serviceAccountKey.privateKey,
-            // Additional environment variables
-        },
+            // Additional environment variables can be added here
+        }
     },
 });
-
-
 
 // Export outputs
 exports.bucketName = bucket.name;
