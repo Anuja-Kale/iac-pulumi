@@ -5,6 +5,7 @@
         "@pulumi/aws": "^5.0.0",
         "@pulumi/awsx": "^1.0.0",
         "@pulumi/gcp": "^7.2.1",
+        "@pulumi/mailgun": "^3.5.0",
         "@pulumi/pulumi": "^3.0.0"
     }
 }
