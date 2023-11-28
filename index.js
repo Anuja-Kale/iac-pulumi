@@ -536,7 +536,7 @@ const lambdaFunction = new aws.lambda.Function("myLambdaFunction", {
     runtime: "nodejs14.x",
     role: lambdaRole.arn,
     handler: "index.handler", // The function within your code that will be called
-    code: new pulumi.asset.RemoteArchive("https://github.com/tparikh/myrepo/archive/refs/tags/v1.0.0.zip"),
+    code: new pulumi.asset.FileArchive("/Users/anujakale/Desktop/lambda-function.zip"), // Local zip file path
     environment: {
         variables: {
             GCS_BUCKET_NAME: bucket.name,
