@@ -344,7 +344,7 @@ const lambdaFunction = new aws.lambda.Function("submissionLambda", {
     runtime: aws.lambda.Runtime.NodeJS18dX,
     role: lambdaRole.arn,
     handler: "index.handler",
-    code: new pulumi.asset.FileArchive("/Users/anujakale/Desktop/lambda-function.zip"), // Assuming you have a local path to your Lambda function code
+    code: new pulumi.asset.FileArchive("/Users/anujakale/Desktop/serverless"), // Assuming you have a local path to your Lambda function code
     environment: {
         variables: {
             GCS_BUCKET_NAME: bucket.name,
