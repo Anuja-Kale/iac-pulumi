@@ -4,7 +4,7 @@ config:
   gcp:project: proven-mercury-406423
   mailgun:apiKey:
     secure: AAABAOMNG+EIldS4oIRBOYv7znWJACR1QbVXBfxVFPOlEMzy3xgbNUFH61qpW5+iJC3ZTX5vBUograUvvVGfZ15N5AbCUDiqqZ/vdmkCcZUM8Q==
-  my-pulumi-proj:amiid: "ami-0805755560dcfba3c"
+  my-pulumi-proj:amiid: "ami-0f1638131a97dbfec"
   my-pulumi-proj:cidr: 192.168.0.0/24
   my-pulumi-proj:cidrEnd: 192.168.0.255
   my-pulumi-proj:internetGatewayName: my-internet-gateway

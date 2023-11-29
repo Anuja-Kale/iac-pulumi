@@ -385,7 +385,7 @@ const emailDynamo = new aws.dynamodb.Table("emailTable", {
 
 // Launch Template instead of Launch Configuration
 const launchTemplate = new aws.ec2.LaunchTemplate("my-launch-template", {
-    imageId: "ami-0805755560dcfba3c", // Replace with your AMI ID
+    imageId: "ami-0f1638131a97dbfec", // Replace with your AMI ID
     instanceType: "t2.micro",
     keyName: "ec2-key",
     networkInterfaces: [{
