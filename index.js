@@ -312,6 +312,14 @@ const dynamoDBFullAccessPolicyAttachment = new aws.iam.RolePolicyAttachment("dyn
     policyArn: "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess",
 });
 
+const nodeModulesLayer = new aws.lambda.LayerVersion("nodeModulesLayer", {
+    layerName: "myNodeModulesLayer",
+    code: new pulumi.asset.AssetArchive({
+        "nodejs": new pulumi.asset.FileArchive("/Users/anujakale/Desktop/lambda-function/nodejs")
+    }),
+    compatibleRuntimes: ["nodejs18.x"],
+});
+
 // IAM Policy for Lambda
 const lambdaPolicy = new aws.iam.Policy("lambdaPolicy", {
     policy: JSON.stringify({
@@ -342,19 +350,18 @@ const lambdaRolePolicyAttachment = new aws.iam.RolePolicyAttachment("lambdaRoleP
 // Lambda Function
 const lambdaFunction = new aws.lambda.Function("submissionLambda", {
     runtime: aws.lambda.Runtime.NodeJS18dX,
-    role: lambdaRole.arn,
+    layers: [nodeModulesLayer.arn],
     handler: "index.handler",
+    role: lambdaRole.arn,
     code: new pulumi.asset.FileArchive("/Users/anujakale/Desktop/serverless"), // Assuming you have a local path to your Lambda function code
     environment: {
         variables: {
             GCS_BUCKET_NAME: bucket.name,
-            GCS_SERVICE_ACCOUNT_KEY: serviceAccountKey.privateKey,
+            //GCS_SERVICE_ACCOUNT_KEY: serviceAccountKey.privateKey,
             // Additional environment variables can be added here
-        }
+        },
     },
 });
-
-
 
 const snsTopic = new aws.sns.Topic("mySnsTopic", {
     name: "mySnsTopic" // Your topic name
