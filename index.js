@@ -640,7 +640,7 @@ exports.bucketName = bucket.name;
 exports.serviceAccountEmail = serviceAccount.email;
 exports.serviceAccountKey = serviceAccountKey.privateKey;
 exports.lambdaFunctionName = lambdaFunction.name;
-exports.loadBalancerDnsName = alb.dnsName;
-
-// Export the DNS name of the load balancer
 exports.loadBalancerDnsName = alb.dnsName;});
+
+// // Export the DNS name of the load balancer
+// exports.loadBalancerDnsName = alb.dnsName;});
