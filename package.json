@@ -1,5 +1,5 @@
 {
-    "name": "my-pulumi-project",
+    "name": "my-pulumi-proj",
     "main": "index.js",
     "dependencies": {
         "@pulumi/aws": "^5.0.0",

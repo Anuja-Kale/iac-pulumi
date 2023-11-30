@@ -1,6 +1,7 @@
-name: my-pulumi-project
+name: my-pulumi-proj
 runtime:
   name: nodejs
   options:
     typescript: false
-description: AWS infrastructure setup with VPC, subnets, and related networking resources.
+description: A minimal AWS JavaScript Pulumi program
+
