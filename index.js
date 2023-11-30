@@ -255,6 +255,7 @@ const dbInstance = new aws.rds.Instance("csye6225-db", {
 
 // // Export the ARN of the SNS topic
 // exports.snsTopicArn = snsTopic.arn
+// exports.snsTopicArn = snsTopic.arn
     });
 
     // Create route tables for private subnets.
@@ -510,9 +511,163 @@ const launchTemplate = new aws.ec2.LaunchTemplate("my-launch-template", {
 
 //const encodedUserData = Buffer.from(userData).toString('base64');
 
+
+// GCP Storage Bucket
+const bucket = new gcp.storage.Bucket("bucket_submission_github", {
+    location: "US",
+    storageClass: "STANDARD",
+    // labels: { ... }
+});
+
+// GCP Service Account
+const serviceAccount = new gcp.serviceaccount.Account("submission-service-account", {
+    accountId: "submission-service-account",
+    displayName: "Submission Service Account",
+});
+
+// GCP Service Account Key
+const serviceAccountKey = new gcp.serviceaccount.Key("submission-service-account-key", {
+    serviceAccountId: serviceAccount.name,
+});
+
+// Bucket IAM Binding
+const bucketIamBinding = new gcp.storage.BucketIAMBinding("bucket-iam-binding", {
+    bucket: bucket.name,
+    role: "roles/storage.objectAdmin",
+    members: [pulumi.interpolate`serviceAccount:${serviceAccount.email}`],
+});
+
+// Dynamically generate secret names to avoid conflicts
+const timestamp = new Date().getTime();
+const gcsBucketSecretName = `gcsBucketSecret-${timestamp}`;
+const gcsServiceAccountKeySecretName = `gcsServiceAccountKeySecret-${timestamp}`;
+
+// AWS Secrets Manager to store GCS bucket name and service account key
+const gcsBucketSecret = new aws.secretsmanager.Secret(gcsBucketSecretName, {
+    name: gcsBucketSecretName
+});
+
+const gcsBucketSecretVersion = new aws.secretsmanager.SecretVersion(`${gcsBucketSecretName}-version`, {
+    secretId: gcsBucketSecret.id,
+    secretString: bucket.name,
+});
+
+const gcsServiceAccountKeySecret = new aws.secretsmanager.Secret(gcsServiceAccountKeySecretName, {
+    name: gcsServiceAccountKeySecretName
+});
+
+const gcsServiceAccountKeySecretVersion = new aws.secretsmanager.SecretVersion(`${gcsServiceAccountKeySecretName}-version`, {
+    secretId: gcsServiceAccountKeySecret.id,
+    secretString: serviceAccountKey.privateKey,
+});
+
+// IAM Role for Lambda
+const lambdaRole = new aws.iam.Role("lambdaRole", {
+    assumeRolePolicy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [{
+            Action: "sts:AssumeRole",
+            Effect: "Allow",
+            Principal: {
+                Service: "lambda.amazonaws.com"
+            }
+        }]
+    }),
+});
+
+// Attach AWSLambdaBasicExecutionRole policy to the Lambda role
+const executionRolePolicyAttachment = new aws.iam.RolePolicyAttachment("executionRolePolicyAttachment", {
+    role: lambdaRole.name,
+    policyArn: "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+});
+
+// Attach AmazonDynamoDBFullAccess policy to the Lambda role
+const dynamoDBFullAccessPolicyAttachment = new aws.iam.RolePolicyAttachment("dynamoDBFullAccessPolicyAttachment", {
+    role: lambdaRole.name,
+    policyArn: "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess",
+});
+
+const nodeModulesLayer = new aws.lambda.LayerVersion("nodeModulesLayer", {
+    layerName: "myNodeModulesLayer",
+    code: new pulumi.asset.AssetArchive({
+        "nodejs": new pulumi.asset.FileArchive("/Users/anujakale/Desktop/lambda-function/nodejs")
+    }),
+    compatibleRuntimes: ["nodejs18.x"],
+});
+
+// IAM Policy for Lambda
+const lambdaPolicy = new aws.iam.Policy("lambdaPolicy", {
+    policy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [{
+            Action: [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+                "sns:Publish",
+                "dynamodb:PutItem",
+                "dynamodb:GetItem",
+                "ses:SendEmail",
+                "ses:SendRawEmail"
+            ],
+            Resource: "*",
+            Effect: "Allow"
+        }]
+    }),
+});
+
+// Attach the Policy to the Role
+const lambdaRolePolicyAttachment = new aws.iam.RolePolicyAttachment("lambdaRolePolicyAttachment", {
+    role: lambdaRole.name,
+    policyArn: lambdaPolicy.arn
+});
+
+// Lambda Function
+const lambdaFunction = new aws.lambda.Function("submissionLambda", {
+    runtime: aws.lambda.Runtime.NodeJS18dX,
+    layers: [nodeModulesLayer.arn],
+    handler: "index.handler",
+    role: lambdaRole.arn,
+    code: new pulumi.asset.FileArchive("/Users/anujakale/Desktop/serverless"), // Assuming you have a local path to your Lambda function code
+    environment: {
+        variables: {
+            GCS_BUCKET_NAME: bucket.name,
+            //GCS_SERVICE_ACCOUNT_KEY: serviceAccountKey.privateKey,
+            // Additional environment variables can be added here
+        },
+    },
+});
+
+const snsTopic = new aws.sns.Topic("mySnsTopic", {
+    name: "mySnsTopic" // Your topic name
+});
+
+const lambdaSubscription = new aws.sns.TopicSubscription("lambdaSubscription", {
+    topic: snsTopic.arn,
+    protocol: "lambda",
+    endpoint: lambdaFunction.arn,
+});
+
+const lambdaPermission = new aws.lambda.Permission("lambdaPermission", {
+    action: "lambda:InvokeFunction",
+    function: lambdaFunction.name,
+    principal: "sns.amazonaws.com",
+    sourceArn: snsTopic.arn,
+});
+
+const emailDynamo = new aws.dynamodb.Table("emailTable", {
+    name: "emailTable", // Choose a suitable name
+    attributes: [
+        { name: "Id", type: "S" },
+    ],
+    hashKey: "Id",
+    billingMode: "PAY_PER_REQUEST",
+});
+
+
 // Launch Template instead of Launch Configuration
 const launchTemplate = new aws.ec2.LaunchTemplate("my-launch-template", {
-    imageId: "ami-0b9be03711aff4b51", // Replace with your AMI ID
+    imageId: "ami-0f1638131a97dbfec", // Replace with your AMI ID
     instanceType: "t2.micro",
     keyName: "ec2-key",
     networkInterfaces: [{
@@ -862,4 +1017,8 @@ exports.bucketName = bucket.name;
 exports.serviceAccountEmail = serviceAccount.email;
 exports.serviceAccountKey = serviceAccountKey.privateKey;
 exports.lambdaFunctionName = lambdaFunction.name;
+//exports.loadBalancerDnsName = alb.dnsName;});
+
+// // Export the DNS name of the load balancer
+// exports.loadBalancerDnsName = alb.dnsName;});
 exports.loadBalancerDnsName = alb.dnsName;
