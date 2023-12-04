@@ -38,4 +38,36 @@ Pulumi's approach of using general-purpose programming languages for infrastruct
 
 ---
 
+## Configuring Load Balancer
+
+1. Access the [AWS Management Console](https://console.aws.amazon.com/).
+
+2. Navigate to the **Load Balancers** section.
+
+3. Select the load balancer associated with your `demo.awswebapp.tech` domain.
+
+4. Go to the **Listeners** configuration.
+
+5. Edit the listener that you want to secure with the SSL certificate.
+
+6. In the SSL certificate section, choose the imported certificate using its ARN obtained from ACM.
+
+7. Save the changes to apply the SSL certificate to your load balancer.
+
+## Testing
+
+To ensure that your SSL certificate is correctly configured, access your application using the HTTPS protocol (e.g., https://demo.awswebapp.tech) through the load balancer. You should see a secure connection with the SSL certificate.
+
+## Troubleshooting
+
+- If you encounter any issues during the import or configuration process, refer to AWS documentation or contact AWS Support.
+- Verify that your DNS records are correctly pointing to the load balancer.
+
+## Additional Resources
+
+- [AWS Certificate Manager Documentation](https://docs.aws.amazon.com/acm/latest/userguide/what-is-acm.html)
+- [Namecheap SSL Certificate Documentation](https://www.namecheap.com/security/ssl-certificates/)
+- [AWS Elastic Load Balancer Documentation](https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/what-is-load-balancing.html)
+
+
 **Note**: Please make sure to include installation instructions, usage examples, and any other specific information relevant to your project in your actual README file. The content provided here is a template and should be adapted to your project's needs.
