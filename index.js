@@ -486,16 +486,19 @@ const targetGroup = new aws.lb.TargetGroup("app-target-group", {
 });
 
 
-// Listener
-const listener = new aws.lb.Listener("app-listener", {
+// Listener for HTTPS
+const httpsListener = new aws.lb.Listener("app-https-listener", {
     loadBalancerArn: alb.arn,
-    port: 80,
-    protocol: "HTTP",
+    port: 443,
+    protocol: "HTTPS",
+    sslPolicy: "ELBSecurityPolicy-2016-08", // example SSL policy
+    certificateArn: "arn:aws:acm:region:account-id:certificate/certificate-id", // replace with your certificate ARN
     defaultActions: [{
         type: "forward",
         targetGroupArn: targetGroup.arn,
     }],
 });
+
 
 // Create an Auto Scaling Group using the launch template
 const autoScalingGroup = new aws.autoscaling.Group("my-auto-scaling-group", {
