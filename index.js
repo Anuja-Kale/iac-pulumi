@@ -55,9 +55,7 @@ const loadBalancerSg = new aws.ec2.SecurityGroup("lb-sg", {
     vpcId: vpc.id,
     description: "Load balancer security group",
     ingress: [
-        //{ protocol: "tcp", fromPort: 80, toPort: 80, cidrBlocks: ["0.0.0.0/0"] },
-       
-        // Allow only HTTPS traffic
+        { protocol: "tcp", fromPort: 80, toPort: 80, cidrBlocks: ["0.0.0.0/0"] },
         { protocol: "tcp", fromPort: 443, toPort: 443, cidrBlocks: ["0.0.0.0/0"] }
     ],
     egress: [
@@ -486,19 +484,16 @@ const targetGroup = new aws.lb.TargetGroup("app-target-group", {
 });
 
 
-// Listener for HTTPS
-const httpsListener = new aws.lb.Listener("app-https-listener", {
+// Listener
+const listener = new aws.lb.Listener("app-listener", {
     loadBalancerArn: alb.arn,
-    port: 443,
-    protocol: "HTTPS",
-    sslPolicy: "ELBSecurityPolicy-2016-08", // example SSL policy
-    certificateArn: "arn:aws:acm:region:account-id:certificate/certificate-id", // replace with your certificate ARN
+    port: 80,
+    protocol: "HTTP",
     defaultActions: [{
         type: "forward",
         targetGroupArn: targetGroup.arn,
     }],
 });
-
 
 // Create an Auto Scaling Group using the launch template
 const autoScalingGroup = new aws.autoscaling.Group("my-auto-scaling-group", {
