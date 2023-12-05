@@ -243,7 +243,6 @@ const instanceProfile = new aws.iam.InstanceProfile("ec2-instance-profile", {
 const bucket = new gcp.storage.Bucket("bucket_submission_github", {
     location: "US",
     storageClass: "STANDARD",
-    forceDestroy: true, // This will force the deletion of the bucket even if it has objects
     // labels: { ... }
 });
 
@@ -342,13 +341,13 @@ const lambdaPolicy = new aws.iam.Policy("lambdaPolicy", {
 //     policyArn: lambdaPolicy.arn
 // });
 
-const nodeModulesLayer = new aws.lambda.LayerVersion("nodeModulesLayer", {
-    layerName: "myNodeModulesLayer",
-    code: new pulumi.asset.AssetArchive({
-        "nodejs": new pulumi.asset.FileArchive("/Users/anujakale/Downloads/serverlesss/nodejs")
-    }),
-    compatibleRuntimes: ["nodejs18.x"],
-});
+// const nodeModulesLayer = new aws.lambda.LayerVersion("nodeModulesLayer", {
+//     layerName: "myNodeModulesLayer",
+//     code: new pulumi.asset.AssetArchive({
+//         "nodejs": new pulumi.asset.FileArchive("/Users/anujakale/Downloads/serverlesss/nodejs")
+//     }),
+//     compatibleRuntimes: ["nodejs18.x"],
+// });
 
 const emailDynamo = new aws.dynamodb.Table("emailTable", {
     name: "emailTable", // Choose a suitable name
@@ -362,10 +361,10 @@ const emailDynamo = new aws.dynamodb.Table("emailTable", {
 // Lambda Function
 const lambdaFunction = new aws.lambda.Function("submissionLambda", {
     runtime: aws.lambda.Runtime.NodeJS18dX,
-    layers: [nodeModulesLayer.arn],
+    //layers: [nodeModulesLayer.arn],
     handler: "index.handler",
     role: lambdaRole.arn,
-    code: new pulumi.asset.FileArchive("/Users/anujakale/Downloads/serverlesss"), // Assuming you have a local path to your Lambda function code
+    code: new pulumi.asset.FileArchive("/Users/anujakale/Downloads/serverless.zip"), // Assuming you have a local path to your Lambda function code
     environment: {
         variables: {
             GCP_BUCKET_NAME: bucket.name,
@@ -394,14 +393,8 @@ const lambdaPermission = new aws.lambda.Permission("lambdaPermission", {
     sourceArn: snsTopic.arn,
 });
 
-// const emailDynamo = new aws.dynamodb.Table("emailTable", {
-//     name: "emailTable", // Choose a suitable name
-//     attributes: [
-//         { name: "Id", type: "S" },
-//     ],
-//     hashKey: "Id",
-//     billingMode: "PAY_PER_REQUEST",
-// });
+;
+
 
 
 // Launch Template instead of Launch Configuration
@@ -443,6 +436,54 @@ const alb = new aws.lb.LoadBalancer("app-load-balancer", {
 });
 
 
+// Target Group for HTTPS traffic
+const targetGroup = new aws.lb.TargetGroup("app-target-group", {
+    port: 8080,
+    protocol: "HTTP", // EC2 instances will receive traffic over HTTP
+    vpcId: vpc.id,
+    // ... (other configurations)
+    tags: applyTags({ "Name": "app-target-group" }),
+});
+
+// Define sslCertificateArn with your actual SSL certificate ARN
+const sslCertificateArn = "arn:aws:acm:us-east-1:123456789012:certificate/your-certificate-arn";
+
+// HTTPS Listener for handling encrypted traffic
+const listener = new aws.lb.Listener("my-https-listener", { // Change the name to something unique
+    loadBalancerArn: alb.arn,
+    port: 443,
+    protocol: "HTTPS",
+    sslPolicy: "ELBSecurityPolicy-TLS-1-2-2017-01", // Choose an appropriate policy
+    certificateArn: sslCertificateArn, // Use the defined sslCertificateArn
+    defaultActions: [{
+        type: "forward",
+        targetGroupArn: targetGroup.arn,
+    }],
+});
+
+
+
+// Requesting an SSL Certificate for the development environment
+// This creates an ACM certificate for the specified domain name using DNS validation.
+const devCertificate = new aws.acm.Certificate("devCertificate", {
+    domainName: "dev.awswebapp.tech",
+    validationMethod: "DNS",
+});
+
+// Creating an HTTPS listener for the Application Load Balancer in the development environment
+// This listener will allow the ALB to handle HTTPS traffic using the ACM certificate.
+const httpsListener = new aws.lb.Listener("https-listener", {
+    loadBalancerArn: alb.arn, // Reference to your ALB
+    port: 443, // Standard port for HTTPS
+    protocol: "HTTPS", // Set the protocol to HTTPS
+    sslPolicy: "ELBSecurityPolicy-2016-08", // SSL policy for security settings (adjust as necessary)
+    certificateArn: "arn:aws:acm:us-east-1:057915486037:certificate/383ebe89-d7ec-4087-b881-bafe6dcbe51b", // Replace with your ACM certificate ARN
+    defaultActions: [{
+        type: "forward",
+        targetGroupArn: targetGroup.arn, // Forward traffic to the target group
+    }],
+});
+
 // const elb = new aws.elb.LoadBalancer("my-load-balancer", {
 //     subnets: publicSubnets.map(subnet => subnet.id),
 //     securityGroups: [loadBalancerSg.id],
@@ -463,37 +504,28 @@ const alb = new aws.lb.LoadBalancer("app-load-balancer", {
 // });
 
 
-// Target Group
-const targetGroup = new aws.lb.TargetGroup("app-target-group", {
-    port: 8080,
-    protocol: "HTTP",
-    vpcId: vpc.id,
-    targetType: "instance",
-    healthCheck: {
-        enabled: true,
-        path: "/healthz",
-        port: "8080",
-        protocol: "HTTP",
-        healthyThreshold: 3,
-        unhealthyThreshold: 5,
-        timeout: 5,
-        interval: 30,
-        matcher: "200",
-    },
-    tags: applyTags({ "Name": "app-target-group" }),
-});
+// // Target Group for HTTPS traffic
+// const targetGroup = new aws.lb.TargetGroup("app-target-group", {
+//     port: 8080,
+//     protocol: "HTTP", // EC2 instances will receive traffic over HTTP
+//     vpcId: vpc.id,
+//     // ... (other configurations)
+//     tags: applyTags({ "Name": "app-target-group" }),
+// });
 
+// // HTTPS Listener for handling encrypted traffic
+// const listener = new aws.lb.Listener("https-listener", {
+//     loadBalancerArn: alb.arn,
+//     port: 443,
+//     protocol: "HTTPS",
+//     sslPolicy: "ELBSecurityPolicy-TLS-1-2-2017-01", // Choose an appropriate policy
+//     certificateArn: sslCertificateArn, // Replace with your actual certificate ARN
+//     defaultActions: [{
+//         type: "forward",
+//         targetGroupArn: targetGroup.arn,
+//     }],
+// });
 
-// Listener
-const listener = new aws.lb.Listener("app-listener", {
-    loadBalancerArn: alb.arn,
-    port: 80,
-    protocol: "HTTP",
-    defaultActions: [{
-        type: "forward",
-        targetGroupArn: targetGroup.arn,
-    }],
-});
 
 // Create an Auto Scaling Group using the launch template
 const autoScalingGroup = new aws.autoscaling.Group("my-auto-scaling-group", {
@@ -511,7 +543,7 @@ const autoScalingGroup = new aws.autoscaling.Group("my-auto-scaling-group", {
         value: "web-server-instance",
         propagateAtLaunch: true,
     }],
-}, { dependsOn: [listener] }); // Depend on the listener, not the ELB
+}, { dependsOn: [httpsListener] }); // Depend on the HTTPS listener
 
 // Create scaling policies for the Auto Scaling Group.
 const scaleUpPolicy = new aws.autoscaling.Policy("scale-up", {
