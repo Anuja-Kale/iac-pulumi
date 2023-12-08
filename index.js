@@ -406,7 +406,8 @@ const lambdaPermission = new aws.lambda.Permission("lambdaPermission", {
 
 // Launch Template instead of Launch Configuration
 const launchTemplate = new aws.ec2.LaunchTemplate("my-launch-template", {
-    imageId: "ami-0b28057267fa7ae44", // Replace with your AMI ID
+    name: "my-launch-template",
+    imageId: "ami-040fa1c37e78cd89e", // Replace with your AMI ID
     instanceType: "t2.micro",
     keyName: "ec2-key",
     networkInterfaces: [{
@@ -463,40 +464,43 @@ const alb = new aws.lb.LoadBalancer("app-load-balancer", {
 // });
 
 
-// Target Group
+// Target Group for HTTPS traffic
 const targetGroup = new aws.lb.TargetGroup("app-target-group", {
     port: 8080,
-    protocol: "HTTP",
+    protocol: "HTTP", // EC2 instances will receive traffic over HTTP
     vpcId: vpc.id,
-    targetType: "instance",
-    healthCheck: {
-        enabled: true,
-        path: "/healthz",
-        port: "8080",
-        protocol: "HTTP",
-        healthyThreshold: 3,
-        unhealthyThreshold: 5,
-        timeout: 5,
-        interval: 30,
-        matcher: "200",
-    },
+    // ... (other configurations)
     tags: applyTags({ "Name": "app-target-group" }),
 });
 
 
-// Listener
-const listener = new aws.lb.Listener("app-listener", {
+// Requesting an SSL Certificate for the development environment
+// This creates an ACM certificate for the specified domain name using DNS validation.
+const devCertificate = new aws.acm.Certificate("devCertificate", {
+    domainName: "dev.awswebapp.tech",
+    validationMethod: "DNS",
+});
+
+
+// Define sslCertificateArn with your actual SSL certificate ARN
+const sslCertificateArn = "arn:aws:acm:us-east-1:057915486037:certificate/383ebe89-d7ec-4087-b881-bafe6dcbe51b";
+
+const listener = new aws.lb.Listener("my-https-listener", {
     loadBalancerArn: alb.arn,
-    port: 80,
-    protocol: "HTTP",
+    port: 443,
+    protocol: "HTTPS",
+    sslPolicy: "ELBSecurityPolicy-TLS-1-2-2017-01",
+    certificateArn: sslCertificateArn, // Use the defined sslCertificateArn
     defaultActions: [{
         type: "forward",
         targetGroupArn: targetGroup.arn,
     }],
 });
 
+
 // Create an Auto Scaling Group using the launch template
 const autoScalingGroup = new aws.autoscaling.Group("my-auto-scaling-group", {
+    name: "my-auto-scaling-group",
     vpcZoneIdentifiers: publicSubnets.map(subnet => subnet.id),
     launchTemplate: {
         id: launchTemplate.id,
